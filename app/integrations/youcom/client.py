@@ -1,6 +1,6 @@
 # app/integrations/youcom/client.py
 """
-You.com API Client for CookHero.
+You.com API Client for MealMate.
 
 Provides Search and Research API integration:
 - Search API: Real-time web search with title/URL/snippet

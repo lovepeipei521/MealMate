@@ -1,5 +1,5 @@
 """
-Prompt injection protection for CookHero.
+Prompt injection protection for MealMate.
 
 Detects and blocks potential prompt injection attacks
 in user inputs before they reach the LLM.

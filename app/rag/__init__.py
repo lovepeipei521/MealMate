@@ -1,6 +1,6 @@
 # app/rag/__init__.py
 """
-RAG (Retrieval-Augmented Generation) module for CookHero.
+RAG (Retrieval-Augmented Generation) module for MealMate.
 
 This module provides the core RAG pipeline functionality including:
 - Document processing and chunking

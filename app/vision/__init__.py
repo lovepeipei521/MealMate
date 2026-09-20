@@ -1,5 +1,5 @@
 """
-Vision Module for CookHero
+Vision Module for MealMate
 Provides multimodal (image + text) understanding capabilities.
 
 This module contains:

@@ -1,6 +1,6 @@
 # app/config/mcp_config.py
 """
-MCP (Model Context Protocol) configuration for CookHero.
+MCP (Model Context Protocol) configuration for MealMate.
 """
 
 from typing import Optional

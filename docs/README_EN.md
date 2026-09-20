@@ -1,5 +1,5 @@
 <div align="center">
-<img src="./image.png" alt="CookHero Logo" width="512" />
+<img src="./image.png" alt="MealMate Logo" width="512" />
 
 **Intelligent Cooking & Diet Management Assistant · Your Personalized Diet Hero**
 
@@ -27,7 +27,7 @@
 
 ## 📖 Project Overview
 
-**CookHero** is a personalized diet management platform powered by LLM, RAG, Agents, multimodal models, and nutrition analytics. It is more than a recipe library—it is your “diet hero assistant” that helps you plan, log, analyze, and improve daily eating habits end-to-end.
+**MealMate** is a personalized diet management platform powered by LLM, RAG, Agents, multimodal models, and nutrition analytics. It is more than a recipe library—it is your “diet hero assistant” that helps you plan, log, analyze, and improve daily eating habits end-to-end.
 
 - 🔍 **Smart Q&A**: Answer cooking techniques, ingredient pairings, and nutrition questions
 - 🍽️ **Personalized Recommendations**: Suggest dishes aligned with goals and dietary restrictions
@@ -37,7 +37,7 @@
 - 🧠 **Deep Understanding**: Multi-turn conversations for precise action suggestions
 - 🌐 **Real-time Search**: Integrate web search for the latest cooking trends
 
-CookHero is built for kitchen beginners, fitness/weight-loss users, glycemic control scenarios, allergy-sensitive users, and family kitchens—making cooking more professional, intelligent, and sustainable.
+MealMate is built for kitchen beginners, fitness/weight-loss users, glycemic control scenarios, allergy-sensitive users, and family kitchens—making cooking more professional, intelligent, and sustainable.
 
 > The internal recipe library is sourced from [Anduin2017/HowToCook](https://github.com/Anduin2017/HowToCook), thanks to the contributors of that project!
 
@@ -154,8 +154,8 @@ CookHero is built for kitchen beginners, fitness/weight-loss users, glycemic con
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/Decade-qiu/CookHero.git
-   cd CookHero
+   git clone https://github.com/lovepeipei521/MealMate.git
+   cd MealMate
    ```
 
 2. **Configure environment variables**

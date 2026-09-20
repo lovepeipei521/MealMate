@@ -1,5 +1,5 @@
 """
-Web Search Tool for CookHero.
+Web Search Tool for MealMate.
 
 Provides two core methods:
 1. decide_search() - Determines if web search is needed and generates search parameters
@@ -100,7 +100,7 @@ class WebSearchResult:
 
 # Prompt template for web search decision
 WEB_SEARCH_DECISION_PROMPT_TEMPLATE = """
-你是 CookHero 的「Web 搜索决策模块」，专门判断当前用户问题是否需要进行互联网搜索来补充回答。
+你是 MealMate 的「Web 搜索决策模块」，专门判断当前用户问题是否需要进行互联网搜索来补充回答。
 
 【决策原则】
 

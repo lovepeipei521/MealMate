@@ -1,13 +1,13 @@
-# CookHero 项目结构详解
+# MealMate 项目结构详解
 
-本文档详细说明 CookHero 项目的目录结构和各模块职责。
+本文档详细说明 MealMate 项目的目录结构和各模块职责。
 
 ---
 
 ## 一、项目根目录
 
 ```
-CookHero/
+MealMate/
 ├── app/                    # 后端应用主目录
 ├── frontend/               # 前端应用
 ├── scripts/                # 工具脚本

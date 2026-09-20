@@ -1,5 +1,5 @@
 """
-Authentication service for CookHero.
+Authentication service for MealMate.
 
 Provides user registration, password hashing, and JWT token generation.
 Includes security features: account lockout after failed attempts.

@@ -1,7 +1,7 @@
 # =============================================================================
-# CookHero Configuration File
+# MealMate Configuration File
 # =============================================================================
-# This file contains all application configuration for the CookHero RAG system.
+# This file contains all application configuration for the MealMate RAG system.
 # Sensitive values (API keys, passwords) should be stored in .env file.
 #
 # Configuration is organized into logical sections:

@@ -1,6 +1,6 @@
 # app/agent/tools/common/knowledge_base_search.py
 """
-CookHero 知识库检索 Tool
+MealMate 知识库检索 Tool
 
 将 RAG 检索能力封装为 Agent 可调用的内置工具。
 """
@@ -18,11 +18,11 @@ class KnowledgeBaseSearchTool(BaseTool):
     """
     知识库检索 Tool。
 
-    使用 CookHero 的 RAG 知识库检索相关内容。
+    使用 MealMate 的 RAG 知识库检索相关内容。
     """
 
     name = "knowledge_base_search"
-    description = "搜索 CookHero 内置知识库，返回可引用的上下文与来源。"
+    description = "搜索 MealMate 内置知识库，返回可引用的上下文与来源。"
     parameters = {
         "type": "object",
         "properties": {

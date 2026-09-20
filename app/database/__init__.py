@@ -1,6 +1,6 @@
 # app/database/__init__.py
 """
-Database module for CookHero.
+Database module for MealMate.
 Provides async database session management, ORM models, and repositories.
 """
 

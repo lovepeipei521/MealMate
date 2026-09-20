@@ -591,7 +591,7 @@ class ConversationService:
             yield self._emit_thinking(ctx, f"✍️ 重写后的查询语句: {ctx.rewritten_query}")
 
             # RAG retrieval
-            yield self._emit_thinking(ctx, "🔎 正在从 CookHero 知识库中检索相关资料...")
+            yield self._emit_thinking(ctx, "🔎 正在从 MealMate 知识库中检索相关资料...")
 
             retrieval_result = await rag_service_instance.retrieve(
                 ctx.rewritten_query,
@@ -789,7 +789,7 @@ class ConversationService:
         if rag_context.strip():
             parts.append(
                 "【本地知识库工具分析结果】\n"
-                "下面是 CookHero 知识库中与当前问题最相关的资料，请参考回答：\n"
+                "下面是 MealMate 知识库中与当前问题最相关的资料，请参考回答：\n"
                 f"{rag_context.strip()}\n"
             )
 

@@ -1,5 +1,5 @@
 """
-Vision Agent for CookHero
+Vision Agent for MealMate
 Handles image analysis and determines cooking-related intent.
 
 This agent:
@@ -72,7 +72,7 @@ class VisionAnalysisResult:
 
 
 # Vision analysis prompt template
-VISION_ANALYSIS_PROMPT = """你是 CookHero 的视觉理解模块，专门用于分析用户上传的图片并结合用户的文字提问来理解用户意图。
+VISION_ANALYSIS_PROMPT = """你是 MealMate 的视觉理解模块，专门用于分析用户上传的图片并结合用户的文字提问来理解用户意图。
 
 ⚠️ 严格输出要求：
 仅输出一个 JSON 对象，禁止输出任何解释、前后缀、markdown 代码块或额外文本。务必遵守字段与类型。

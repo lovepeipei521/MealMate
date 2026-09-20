@@ -1,6 +1,6 @@
 # app/config/config.py
 """
-Unified configuration module for CookHero.
+Unified configuration module for MealMate.
 Provides a single entry point for all application configuration.
 
 Design:
@@ -47,7 +47,7 @@ class Settings(BaseModel):
     # Global Configuration
     # ==========================================================================
     API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "CookHero"
+    PROJECT_NAME: str = "MealMate"
     DEBUG: bool = False
 
     # ==========================================================================

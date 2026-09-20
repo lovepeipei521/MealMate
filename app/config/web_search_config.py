@@ -1,6 +1,6 @@
 # app/config/web_search_config.py
 """
-Web Search configuration for CookHero.
+Web Search configuration for MealMate.
 Uses You.com Search API for web search.
 """
 

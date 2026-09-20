@@ -1,6 +1,6 @@
 # app/conversation/__init__.py
 """
-Conversation module for CookHero.
+Conversation module for MealMate.
 Handles conversation flow, intent detection, query rewriting, and LLM orchestration.
 
 This module provides a unified interface for all conversation-related functionality,

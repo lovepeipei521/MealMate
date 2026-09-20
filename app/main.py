@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="The backend API for the CookHero intelligent dietary assistant.",
+    description="The backend API for the MealMate intelligent dietary assistant.",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -213,4 +213,4 @@ async def root():
     """
     Root endpoint to check API status.
     """
-    return {"message": "Welcome to CookHero API!"}
+    return {"message": "Welcome to MealMate API!"}

@@ -1,5 +1,5 @@
 # =============================================================================
-# CookHero NeMo Guardrails 封装
+# MealMate NeMo Guardrails 封装
 # =============================================================================
 # 提供统一的安全检查 API，封装 NeMo Guardrails 功能
 # =============================================================================
@@ -46,7 +46,7 @@ class SecurityCheckResult:
 
 class CookHeroGuard:
     """
-    CookHero 安全防护封装
+    MealMate 安全防护封装
 
     基于 NeMo Guardrails 提供：
     - 输入层：Prompt Injection 检测、Jailbreak 检测、话题检测
@@ -75,7 +75,7 @@ class CookHeroGuard:
 
     # 标准安全拒答响应
     BLOCKED_RESPONSES = {
-        "jailbreak": "抱歉，我无法回答这个问题。我是 CookHero，专注于烹饪相关的帮助。🍳",
+        "jailbreak": "抱歉，我无法回答这个问题。我是 MealMate，专注于烹饪相关的帮助。🍳",
         "prompt_injection": "检测到潜在的恶意输入，请修改您的问题。",
         "off_topic": "作为您的烹饪助手，我只能回答与烹饪、食物、厨房相关的问题。有什么美食问题我可以帮您解答吗？🥗",
         "output_leak": "抱歉，我无法提供这类信息。让我们继续聊烹饪相关的话题吧！🍳",

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 FILTER_EXPRESSION_PROMPT = ChatPromptTemplate.from_template(
     """
-你是 CookHero 的「Milvus 元数据过滤表达式生成器」。
+你是 MealMate 的「Milvus 元数据过滤表达式生成器」。
 
 你的任务是：**根据用户查询，判断是否可以生成一个可直接用于 Milvus `expr` 参数的布尔过滤表达式**。
 **只有在条件明确、无歧义、不会明显损害召回的情况下，才允许生成过滤表达式；否则必须放弃过滤。**

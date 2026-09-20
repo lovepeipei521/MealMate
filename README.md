@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./docs/image.png" alt="CookHero Logo" width="512" />
+<img src="./docs/image.png" alt="MealMate Logo" width="512" />
 
 **智能烹饪与饮食管理助手 · 你的个性化饮食英雄**
 
@@ -31,7 +31,7 @@
 
 ## 📖 项目简介
 
-**CookHero**（烹饪英雄）是一个融合 LLM、RAG、Agent、多模态与营养数据分析的个性化饮食管理平台。它不仅是菜谱库，更是一位能陪你做计划、做记录、看数据、给建议的“饮食管理英雄助手”，帮助你把烹饪与健康目标变成可执行的日常。
+**MealMate**（烹饪英雄）是一个融合 LLM、RAG、Agent、多模态与营养数据分析的个性化饮食管理平台。它不仅是菜谱库，更是一位能陪你做计划、做记录、看数据、给建议的“饮食管理英雄助手”，帮助你把烹饪与健康目标变成可执行的日常。
 
 - 🔍 **智能问答**：解答烹饪技巧、食材搭配、营养知识等问题
 - 🍽️ **个性化推荐**：根据口味、目标和限制提供更贴合的菜品选择
@@ -41,7 +41,7 @@
 - 🧠 **深度理解**：多轮对话理解用户意图，输出精准行动建议
 - 🌐 **实时搜索**：结合 Web 搜索获取最新烹饪资讯和趋势
 
-CookHero 面向厨房新手、健身/减脂/控糖人群、健康饮食倡导者、过敏体质用户及家庭场景，致力于让烹饪更专业、更智能、更可持续。
+MealMate 面向厨房新手、健身/减脂/控糖人群、健康饮食倡导者、过敏体质用户及家庭场景，致力于让烹饪更专业、更智能、更可持续。
 
 > 内部自带的食谱来源于[Anduin2017/HowToCook](https://github.com/Anduin2017/HowToCook)，感谢该项目的贡献者！
 
@@ -155,8 +155,8 @@ CookHero 面向厨房新手、健身/减脂/控糖人群、健康饮食倡导者
 
 1. **克隆项目**
    ```bash
-   git clone https://github.com/Decade-qiu/CookHero.git
-   cd CookHero
+   git clone https://github.com/lovepeipei521/MealMate.git
+   cd MealMate
    ```
 
 2. **配置环境变量**

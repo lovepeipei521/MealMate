@@ -492,7 +492,7 @@ class RAGService:
                 or metadata.get("title")
                 or metadata.get("source_title")
             )
-            info = title or metadata.get("category") or "CookHero 知识库"
+            info = title or metadata.get("category") or "MealMate 知识库"
 
             # Build unified source dict
             source_info: Dict[str, str] = {

@@ -1,6 +1,6 @@
 # app/config/database_config.py
 """
-Database configuration for CookHero.
+Database configuration for MealMate.
 Contains all database connection configurations:
 - PostgreSQL: persistent storage for conversations and user data
 - Redis: caching layer (L1 exact match cache)

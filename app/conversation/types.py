@@ -50,7 +50,7 @@ class UnifiedSource:
     @classmethod
     def from_rag_source(cls, source_dict: Dict[str, Any]) -> "UnifiedSource":
         """Convert RAG service source to unified format."""
-        info = source_dict.get("info") or source_dict.get("title") or "CookHero 知识库"
+        info = source_dict.get("info") or source_dict.get("title") or "MealMate 知识库"
         return cls(
             type="rag",
             info=info,

@@ -11,7 +11,7 @@ from app.utils.structured_json import extract_first_valid_json
 logger = logging.getLogger(__name__)
 
 HISTORY_REWRITE_PROMPT_TEMPLATE = """
-你是 CookHero 的「检索查询重写器」。你的任务是：**将用户的当前问题结合对话历史，重写为一条完整、独立、自然、可直接用于菜谱与烹饪知识库语义检索的一句话查询**
+你是 MealMate 的「检索查询重写器」。你的任务是：**将用户的当前问题结合对话历史，重写为一条完整、独立、自然、可直接用于菜谱与烹饪知识库语义检索的一句话查询**
 
 【重写规则（必须严格遵守）】
 

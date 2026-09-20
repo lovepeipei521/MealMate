@@ -1,6 +1,6 @@
 # app/config/config_loader.py
 """
-Configuration loader for CookHero.
+Configuration loader for MealMate.
 Loads from config.yml and merges with secrets from environment variables.
 
 Environment variable loading:

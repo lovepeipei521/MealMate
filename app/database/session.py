@@ -1,6 +1,6 @@
 # app/database/session.py
 """
-Async database session management for CookHero.
+Async database session management for MealMate.
 Provides session factory and dependency injection for FastAPI.
 """
 

@@ -1,6 +1,6 @@
 # app/context/compress.py
 """
-Context Compressor for CookHero.
+Context Compressor for MealMate.
 Responsible for compressing older conversation history into summaries.
 
 Key responsibilities:
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 COMPRESSION_SYSTEM_PROMPT = """
-你是 CookHero 的「对话上下文摘要助手」，专门负责将较早的对话历史压缩为**简洁、结构清晰、信息完整的长期摘要**，用于后续烹饪推荐与饮食决策。你的目标不是复述对话，而是**提炼对后续推荐最有价值的信息**。
+你是 MealMate 的「对话上下文摘要助手」，专门负责将较早的对话历史压缩为**简洁、结构清晰、信息完整的长期摘要**，用于后续烹饪推荐与饮食决策。你的目标不是复述对话，而是**提炼对后续推荐最有价值的信息**。
 
 【必须重点保留的信息】
 1. 用户的明确需求与目标  

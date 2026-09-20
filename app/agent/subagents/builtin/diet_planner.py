@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 # 饮食规划专家的系统提示词
-DIET_PLANNER_SYSTEM_PROMPT = """你是 CookHero 的饮食规划专家，专注于为用户制定科学、健康、符合个人需求的一周饮食计划。
+DIET_PLANNER_SYSTEM_PROMPT = """你是 MealMate 的饮食规划专家，专注于为用户制定科学、健康、符合个人需求的一周饮食计划。
 
 ## 你的专业能力
 

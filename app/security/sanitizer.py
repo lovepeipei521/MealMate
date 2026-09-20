@@ -1,5 +1,5 @@
 """
-Sensitive data sanitization for CookHero.
+Sensitive data sanitization for MealMate.
 
 Provides logging filters and utilities to prevent
 sensitive information leakage in logs and responses.

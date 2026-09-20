@@ -1,6 +1,6 @@
 # app/agent/tools/mcp/__init__.py
 """
-MCP (Model Context Protocol) module for CookHero.
+MCP (Model Context Protocol) module for MealMate.
 
 Provides StreamableHTTP client and setup helpers for MCP server integration.
 """

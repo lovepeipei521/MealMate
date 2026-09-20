@@ -1,5 +1,5 @@
 # =============================================================================
-# CookHero NeMo Guardrails Module
+# MealMate NeMo Guardrails Module
 # =============================================================================
 # 企业级 Prompt 安全防护模块
 # 基于 NVIDIA NeMo Guardrails 框架

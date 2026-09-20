@@ -1,6 +1,6 @@
 # app/database/models.py
 """
-SQLAlchemy ORM models for CookHero.
+SQLAlchemy ORM models for MealMate.
 Defines database schema for conversations, messages, user profiles,
 long-term memory, and conversation summaries.
 """

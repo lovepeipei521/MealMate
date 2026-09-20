@@ -1,5 +1,5 @@
 """
-Rate limiting middleware for CookHero.
+Rate limiting middleware for MealMate.
 
 Provides IP-level and user-level rate limiting using Redis.
 Supports different limits for different endpoint types.

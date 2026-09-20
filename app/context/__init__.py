@@ -1,6 +1,6 @@
 # app/context/__init__.py
 """
-Context module for CookHero.
+Context module for MealMate.
 Provides unified management of conversation context including:
 - Context building and assembly (Manager)
 - Context compression and summarization (Compress)

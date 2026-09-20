@@ -1,6 +1,6 @@
 # app/config/__init__.py
 """
-Configuration module for CookHero.
+Configuration module for MealMate.
 Provides unified access to all configuration settings.
 
 Usage:

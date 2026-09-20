@@ -1,5 +1,5 @@
 """
-Security module for CookHero.
+Security module for MealMate.
 
 Provides enterprise-grade security features:
 - Prompt injection protection (basic pattern matching)

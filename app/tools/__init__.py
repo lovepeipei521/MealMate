@@ -1,6 +1,6 @@
 # app/tools/__init__.py
 """
-Tools module for CookHero.
+Tools module for MealMate.
 Contains external service integrations like web search.
 """
 

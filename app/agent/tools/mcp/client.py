@@ -139,7 +139,7 @@ class MCPClient:
                     "sampling": {},
                 },
                 "clientInfo": {
-                    "name": "CookHero",
+                    "name": "MealMate",
                     "version": "1.0.0",
                 },
             },

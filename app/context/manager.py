@@ -1,6 +1,6 @@
 # app/context/manager.py
 """
-Context Manager for CookHero.
+Context Manager for MealMate.
 Responsible for building and assembling conversation context for LLM consumption.
 
 Context structure:

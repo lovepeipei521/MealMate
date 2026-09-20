@@ -1,5 +1,5 @@
 """
-Middleware module for CookHero.
+Middleware module for MealMate.
 
 Provides HTTP middleware components:
 - Rate limiting

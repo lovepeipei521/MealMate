@@ -309,11 +309,11 @@ function SidebarHeader({
                     <div className="w-8 h-8 flex items-center justify-center">
                         <img
                             src="/logo.png"
-                            alt="CookHero Logo"
+                            alt="MealMate Logo"
                             className="w-full h-full object-contain"
                         />
                     </div>
-                    <span className="font-bold text-gray-800 dark:text-gray-100">CookHero</span>
+                    <span className="font-bold text-gray-800 dark:text-gray-100">MealMate</span>
                     
                     {onToggleAgentMode && (
                         <button

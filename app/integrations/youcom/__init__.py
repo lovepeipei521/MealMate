@@ -1,6 +1,6 @@
 # app/integrations/youcom/__init__.py
 """
-You.com API integration for CookHero.
+You.com API integration for MealMate.
 Provides Search and Research API clients.
 """
 

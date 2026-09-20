@@ -1,5 +1,5 @@
 """
-Security audit logging for CookHero.
+Security audit logging for MealMate.
 
 Provides structured logging for security-relevant events
 to support compliance and incident investigation.
