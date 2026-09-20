@@ -1,11 +1,11 @@
 /*
  Navicat Premium Dump SQL
 
- Source Server         : cookhero
+ Source Server         : mealmate
  Source Server Type    : PostgreSQL
  Source Server Version : 160011 (160011)
  Source Host           : localhost:5432
- Source Catalog        : cookhero
+ Source Catalog        : mealmate
  Source Schema         : public
 
  Target Server Type    : PostgreSQL
@@ -31,7 +31,7 @@ CREATE TABLE "public"."users" (
   "user_instruction" text COLLATE "pg_catalog"."default"
 )
 ;
-ALTER TABLE "public"."users" OWNER TO "cookhero";
+ALTER TABLE "public"."users" OWNER TO "mealmate";
 
 -- ----------------------------
 -- Indexes structure for table users

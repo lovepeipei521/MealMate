@@ -1,7 +1,7 @@
 /*
  Agent Messages Table
 
- Source Server         : cookhero
+ Source Server         : mealmate
  Source Server Type    : PostgreSQL
  Source Schema         : public
 */
@@ -22,7 +22,7 @@ CREATE TABLE "public"."agent_messages" (
   "tool_name" varchar(128) COLLATE "pg_catalog"."default"
 )
 ;
-ALTER TABLE "public"."agent_messages" OWNER TO "cookhero";
+ALTER TABLE "public"."agent_messages" OWNER TO "mealmate";
 
 -- ----------------------------
 -- Indexes structure for table agent_messages

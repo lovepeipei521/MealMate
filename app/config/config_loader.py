@@ -170,7 +170,7 @@ def load_rag_config(llm_config: Any | None = None) -> RAGConfig:
         "ttl": cache_data.get("ttl", 3600),
         "l2_enabled": cache_data.get("l2_enabled", True),
         "similarity_threshold": cache_data.get("similarity_threshold", 0.92),
-        "vector_collection": cache_data.get("vector_collection", "cookhero_retrieval_cache"),
+        "vector_collection": cache_data.get("vector_collection", "mealmate_retrieval_cache"),
     }
 
     return RAGConfig.model_validate(rag_data)

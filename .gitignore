@@ -23,7 +23,7 @@ dist/
 /data/HowToCook/
 /vector_index/
 /deployments/volumes/
-/cookhero.db
+/mealmate.db
 
 # Secrets
 .env

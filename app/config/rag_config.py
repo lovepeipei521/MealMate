@@ -80,7 +80,7 @@ class CacheConfig(BaseModel):
     # L2 semantic cache
     l2_enabled: bool = True
     similarity_threshold: float = 0.92
-    vector_collection: str = "cookhero_retrieval_cache"
+    vector_collection: str = "mealmate_retrieval_cache"
 
 
 class HowToCookConfig(BaseModel):

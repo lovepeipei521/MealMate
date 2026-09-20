@@ -246,7 +246,7 @@ NeMo Guardrails provides:
 - **Rails Definition**: Configurable custom security rules
 
 ```python
-class CookHeroGuard:
+class MealMateGuard:
     """MealMate security protection wrapper"""
 
     async def check_input(self, message: str) -> SecurityCheckResult:

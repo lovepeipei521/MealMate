@@ -44,7 +44,7 @@ class SecurityCheckResult:
         return self.result == GuardResult.BLOCKED
 
 
-class CookHeroGuard:
+class MealMateGuard:
     """
     MealMate 安全防护封装
 
@@ -54,7 +54,7 @@ class CookHeroGuard:
 
     使用方式：
     ```python
-    guard = CookHeroGuard()
+    guard = MealMateGuard()
 
     # 检查输入
     result = await guard.check_input("用户消息")
@@ -452,7 +452,7 @@ class CookHeroGuard:
 _enabled = os.getenv("GUARDRAILS_ENABLED", "false").lower() == "true"
 
 # 全局 guard 实例
-guard = CookHeroGuard(enabled=_enabled)
+guard = MealMateGuard(enabled=_enabled)
 
 
 # =============================================================================

@@ -1,11 +1,11 @@
 /*
  Navicat Premium Dump SQL
 
- Source Server         : cookhero
+ Source Server         : mealmate
  Source Server Type    : PostgreSQL
  Source Server Version : 160011 (160011)
  Source Host           : localhost:5432
- Source Catalog        : cookhero
+ Source Catalog        : mealmate
  Source Schema         : public
 
  Target Server Type    : PostgreSQL
@@ -40,7 +40,7 @@ CREATE TABLE "public"."rag_evaluations" (
   "evaluated_at" timestamp(6)
 )
 ;
-ALTER TABLE "public"."rag_evaluations" OWNER TO "cookhero";
+ALTER TABLE "public"."rag_evaluations" OWNER TO "mealmate";
 
 -- ----------------------------
 -- Indexes structure for table rag_evaluations

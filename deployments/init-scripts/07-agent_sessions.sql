@@ -1,7 +1,7 @@
 /*
  Agent Sessions Table
 
- Source Server         : cookhero
+ Source Server         : mealmate
  Source Server Type    : PostgreSQL
  Source Schema         : public
 */
@@ -21,7 +21,7 @@ CREATE TABLE "public"."agent_sessions" (
   "metadata" jsonb
 )
 ;
-ALTER TABLE "public"."agent_sessions" OWNER TO "cookhero";
+ALTER TABLE "public"."agent_sessions" OWNER TO "mealmate";
 
 -- ----------------------------
 -- Indexes structure for table agent_sessions

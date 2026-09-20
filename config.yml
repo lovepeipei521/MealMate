@@ -136,7 +136,7 @@ cache:
   # Similarity threshold for L2 cache hits (0.0-1.0)
   similarity_threshold: 0.92
   # Collection name for L2 cache storage
-  vector_collection: "cookhero_retrieval_cache"
+  vector_collection: "mealmate_retrieval_cache"
   # L2 cache credentials loaded from .env (MILVUS_USER / MILVUS_PASSWORD)
 
 # =============================================================================
@@ -264,8 +264,8 @@ database:
   postgres:
     host: "localhost"
     port: 5432
-    database: "cookhero"
-    user: "cookhero"
+    database: "mealmate"
+    user: "mealmate"
     # password: Loaded from .env (DATABASE_PASSWORD)
     # Connection pool settings
     pool_size: 20

@@ -14,7 +14,7 @@ from app.security.audit import AuditLogger, audit_logger
 
 # NeMo Guardrails integration
 from app.security.guardrails import (
-    CookHeroGuard,
+    MealMateGuard,
     GuardResult,
     SecurityCheckResult,
     guard,
@@ -33,7 +33,7 @@ __all__ = [
     "AuditLogger",
     "audit_logger",
     # NeMo Guardrails (LLM-based)
-    "CookHeroGuard",
+    "MealMateGuard",
     "GuardResult",
     "SecurityCheckResult",
     "guard",

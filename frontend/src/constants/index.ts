@@ -10,10 +10,10 @@ export const CONVERSATIONS_PAGE_SIZE = 30;
 
 // Storage Keys
 export const STORAGE_KEYS = {
-  TOKEN: 'cookhero_token',
-  USERNAME: 'cookhero_username',
+  TOKEN: 'mealmate_token',
+  USERNAME: 'mealmate_username',
   THEME: 'theme',
-  STREAMING_CACHE: 'cookhero_streaming_cache',
+  STREAMING_CACHE: 'mealmate_streaming_cache',
 } as const;
 
 // Intent Labels

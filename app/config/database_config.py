@@ -18,8 +18,8 @@ class PostgresConfig(BaseModel):
     # Connection settings
     host: str = "localhost"
     port: int = 5432
-    database: str = "cookhero"
-    user: str = "cookhero"
+    database: str = "mealmate"
+    user: str = "mealmate"
     password: Optional[str] = None
 
     # Connection pool settings

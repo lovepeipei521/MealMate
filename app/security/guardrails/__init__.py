@@ -6,7 +6,7 @@
 # =============================================================================
 
 from app.security.guardrails.guard import (
-    CookHeroGuard,
+    MealMateGuard,
     GuardResult,
     SecurityCheckResult,
     guard,
@@ -16,7 +16,7 @@ from app.security.guardrails.guard import (
 
 __all__ = [
     # 类
-    "CookHeroGuard",
+    "MealMateGuard",
     "GuardResult", 
     "SecurityCheckResult",
     # 全局实例

@@ -50,7 +50,7 @@ class CacheManager:
         l2_enabled: bool = True,
         vector_host: Optional[str] = None,
         vector_port: Optional[int] = None,
-        vector_collection: str = "cookhero_retrieval_cache",
+        vector_collection: str = "mealmate_retrieval_cache",
         vector_user: Optional[str] = None,
         vector_password: Optional[str] = None,
         vector_secure: bool = False,

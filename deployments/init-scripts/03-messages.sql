@@ -1,11 +1,11 @@
 /*
  Navicat Premium Dump SQL
 
- Source Server         : cookhero
+ Source Server         : mealmate
  Source Server Type    : PostgreSQL
  Source Server Version : 160011 (160011)
  Source Host           : localhost:5432
- Source Catalog        : cookhero
+ Source Catalog        : mealmate
  Source Schema         : public
 
  Target Server Type    : PostgreSQL
@@ -33,7 +33,7 @@ CREATE TABLE "public"."messages" (
   "answer_duration_ms" int4
 )
 ;
-ALTER TABLE "public"."messages" OWNER TO "cookhero";
+ALTER TABLE "public"."messages" OWNER TO "mealmate";
 
 -- ----------------------------
 -- Indexes structure for table messages
