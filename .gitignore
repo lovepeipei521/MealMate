@@ -1,0 +1,39 @@
+# Virtual Environment
+.venv/
+venv/
+*.venv
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE and OS files
+.DS_Store
+.idea/
+.vscode/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Local data and indexes
+/data/documents/
+/data/HowToCook/
+/vector_index/
+/deployments/volumes/
+/cookhero.db
+
+# Secrets
+.env
+GEMINI.md
+CODEBUDDY.md
+/data/debug/
+
+.clineignore
+
+# Logs
+logs/
+blog/
+.ignore
