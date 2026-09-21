@@ -36,9 +36,8 @@ llm:
   fast:
     model_names:
       - "XiaomiMiMo/MiMo-V2-Flash"
-      # - "deepseek-ai/DeepSeek-V3.2"
-      - "Qwen/Qwen3-235B-A22B-Instruct-2507"
-      - "Qwen/Qwen3-VL-235B-A22B-Instruct"
+      - "deepseek-ai/DeepSeek-V4.1-Flash"
+      - "Qwen/Qwen3.8-27B"
     base_url: "https://api-inference.modelscope.cn/v1"
     # api_key: Loaded from .env (FAST_LLM_API_KEY or LLM_API_KEY)
     temperature: 1
@@ -48,7 +47,7 @@ llm:
   normal:
     model_names:
       - "Qwen/Qwen3-VL-30B-A3B-Instruct"
-      - "deepseek-ai/DeepSeek-V3.2"
+      - "zai-org/GLM-5.3"
     base_url: "https://api.siliconflow.cn/v1"
     # api_key: Loaded from .env (LLM_API_KEY)
     temperature: 1
@@ -104,7 +103,7 @@ retrieval:
 # Reranker further refines retrieval results for better relevance.
 # Uses the normal LLM API key by default (can override with RERANKER_API_KEY)
 reranker:
-  enabled: true
+  enabled: false
   # Reranker provider type
   type: "siliconflow"
   # Model name for reranking
@@ -127,7 +126,7 @@ reranker:
 # Connection settings are in database.redis and database.milvus sections below.
 # ------------------------------------------------------------------------------
 cache:
-  enabled: true
+  enabled: false
   # Cache TTL in seconds (applies to both L1 and L2)
   ttl: 3600  # 1 hour
 
@@ -150,7 +149,7 @@ vision:
     # Enable/disable vision features
     enabled: true
     # Model configuration (OpenAI-compatible API)
-    model_name: "Qwen/QVQ-72B-Preview"
+    model_name: "/DeepSeek-V4-Flash-Vision-Exp"
     base_url: "https://api-inference.modelscope.cn/v1"
     # api_key: Loaded from .env (VISION_API_KEY or LLM_API_KEY)
     temperature: 0.7
@@ -167,7 +166,7 @@ vision:
 # =============================================================================
 
 evaluation:
-  enabled: true
+  enabled: false
   # Async mode: Run evaluation in background without blocking response
   async_mode: true
   # Sampling rate (0.0-1.0): Fraction of requests to evaluate
@@ -195,7 +194,7 @@ evaluation:
 # =============================================================================
 
 web_search:
-  enabled: true
+  enabled: false
   # Maximum number of search results to return
   max_results: 6
   # api_key: Loaded from .env (YOUCOM_API_KEY)
@@ -207,7 +206,7 @@ web_search:
 # =============================================================================
 
 deep_research:
-  enabled: true
+  enabled: false
   # Research depth: lite, standard, deep, exhaustive
   research_effort: "standard"
 
@@ -218,8 +217,8 @@ deep_research:
 # =============================================================================
 
 image_generation:
-  enabled: true
-  model: "Kwai-Kolors/Kolors"
+  enabled: false
+  model: "Tongyi-MAI/Z-Image"
   base_url: "https://api.siliconflow.cn/v1"
   # api_key: Loaded from .env (OPENAI_IMAGE_API_KEY)
 
@@ -232,7 +231,7 @@ image_generation:
 mcp:
   # Amap (高德地图) MCP server configuration
   amap:
-    enabled: true
+    enabled: false
   # amap_api_key: Loaded from .env (AMAP_API_KEY)
 
 # =============================================================================
