@@ -29,8 +29,8 @@ class VectorStoreConfig(BaseModel):
     """
     type: Literal["milvus"] = "milvus"
     collection_names: Dict[str, str] = {
-        "recipes": "cook_hero_recipes",
-        "personal": "cook_hero_personal_docs",
+        "recipes": "mealmate_recipes",
+        "personal": "mealmate_personal_docs",
     }
 
 

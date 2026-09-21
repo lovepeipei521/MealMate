@@ -79,9 +79,9 @@ vector_store:
   # Collection names for different data types
   collection_names:
     # Global recipe collection (HowToCook)
-    recipes: "cook_hero_recipes"
+    recipes: "mealmate_recipes"
     # User's personal documents collection
-    personal: "cook_hero_personal_docs"
+    personal: "mealmate_personal_docs"
 
 # =============================================================================
 # 4. RAG Pipeline Configuration

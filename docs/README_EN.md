@@ -295,8 +295,8 @@ embedding:
 vector_store:
   type: "milvus"
   collection_names:
-    recipes: "cook_hero_recipes"
-    personal: "cook_hero_personal_docs"
+    recipes: "mealmate_recipes"
+    personal: "mealmate_personal_docs"
 
 # Retrieval configuration
 retrieval:
