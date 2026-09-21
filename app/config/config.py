@@ -25,6 +25,7 @@ from app.config.config_loader import (
     load_llm_config,
     load_rag_config,
     load_web_search_config,
+    load_deep_research_config,
     load_vision_config,
     load_evaluation_config,
     load_mcp_config,
