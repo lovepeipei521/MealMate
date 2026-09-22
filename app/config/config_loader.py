@@ -64,7 +64,20 @@ def load_llm_config() -> LLMConfig:
 
     normal_data = dict(llm_data.get("normal", {}) or {})
     fast_data = dict(llm_data.get("fast", {}) or {})
-    vision_data = dict(llm_data.get("vision", {}) or {})
+    # Top-level vision.model is the canonical configuration:
+    #   vision:
+    #     model:
+    #       model_name: ...
+    # Keep llm.vision as a backward-compatible fallback.
+    top_level_vision = dict(
+        (config_data.get("vision", {}) or {}).get("model", {}) or {}
+    )
+    vision_data = top_level_vision or dict(llm_data.get("vision", {}) or {})
+
+    if top_level_vision:
+        model_name = vision_data.pop("model_name", None)
+        if model_name:
+            vision_data["model_names"] = [model_name]
 
     if normal_api_key:
         normal_data["api_key"] = normal_api_key

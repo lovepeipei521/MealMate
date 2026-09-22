@@ -87,7 +87,7 @@ class VisionProvider:
     @property
     def is_enabled(self) -> bool:
         """Check if vision is enabled."""
-        return bool(self.config.api_key)
+        return bool(self.config.enabled and self.config.api_key)
 
     def build_multimodal_message(
         self,

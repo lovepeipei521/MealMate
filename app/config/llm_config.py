@@ -40,6 +40,8 @@ class NormalLLMConfig(LLMProfileConfig):
 class VisionLLMConfig(LLMProfileConfig):
     """Vision LLM with image processing settings."""
 
+    enabled: bool = True
+
     # Override defaults for vision model
     model_names: list[str] = Field(
         default_factory=lambda: ["Qwen/QVQ-72B-Preview"]
