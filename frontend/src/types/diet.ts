@@ -112,8 +112,15 @@ export interface UserFoodPreference {
   id: string;
   user_id: string;
   common_foods?: Array<{ name: string; frequency?: number; avg_weight?: number }>;
+  preferred_foods?: string[];
   avoided_foods?: string[];
   diet_tags?: string[];
+  allergies?: string[];
+  favorite_cuisines?: string[];
+  calorie_goal?: number;
+  protein_goal?: number;
+  fat_goal?: number;
+  carbs_goal?: number;
   avg_daily_calories_min?: number;
   avg_daily_calories_max?: number;
   deviation_patterns?: Array<{ meal_type: string; deviation_rate?: number }>;
@@ -178,6 +185,7 @@ export interface MarkMealEatenRequest {
 
 export interface UpdatePreferenceRequest {
   dietary_restrictions?: string[];
+  diet_tags?: string[];
   allergies?: string[];
   favorite_cuisines?: string[];
   avoided_foods?: string[];

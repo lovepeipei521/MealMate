@@ -14,6 +14,7 @@ from app.diet.database.models import (
     MealType,
     DataSource,
 )
+from app.diet.preference_mapping import normalize_preference_updates
 from app.diet.prompts import (
     DIET_LOG_IMAGE_PROMPT_TEMPLATE,
     DIET_LOG_TEXT_PROMPT_TEMPLATE,
@@ -547,11 +548,10 @@ class DietService:
 
     async def update_user_preference(self, user_id: str, **kwargs) -> dict:
         """更新用户偏好"""
-        update_data = dict(kwargs)
-        if "disliked_foods" in update_data and "avoided_foods" not in update_data:
-            update_data["avoided_foods"] = update_data.pop("disliked_foods")
-        else:
-            update_data.pop("disliked_foods", None)
+        update_data = normalize_preference_updates(kwargs)
+        if not update_data:
+            raise ValueError("update_preferences 操作需要至少一个偏好参数")
+
         pref = await self.repository.upsert_user_preference(user_id, **update_data)
         return pref.to_dict()
 

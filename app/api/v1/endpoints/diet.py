@@ -155,6 +155,7 @@ class UpdatePreferenceRequest(BaseModel):
     """Request for updating user preferences."""
 
     dietary_restrictions: Optional[List[str]] = Field(None, description="饮食限制")
+    diet_tags: Optional[List[str]] = Field(None, description="饮食标签")
     allergies: Optional[List[str]] = Field(None, description="过敏原")
     favorite_cuisines: Optional[List[str]] = Field(None, description="喜爱的菜系")
     avoided_foods: Optional[List[str]] = Field(None, description="不喜欢的食物")
@@ -537,7 +538,10 @@ async def update_preferences(
     user_id = get_user_id(request)
 
     update_data = payload.model_dump(exclude_unset=True)
-    pref = await diet_service.update_user_preference(user_id, **update_data)
+    try:
+        pref = await diet_service.update_user_preference(user_id, **update_data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return {"preference": pref}
 

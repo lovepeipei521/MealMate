@@ -62,6 +62,11 @@ class DietAnalysisTool(BaseTool):
                 "items": {"type": "string"},
                 "description": "饮食限制，如 ['vegetarian', 'gluten-free']",
             },
+            "diet_tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "饮食标签，如 ['fat_loss', 'low_carb_dinner']",
+            },
             "allergies": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -114,6 +119,7 @@ class DietAnalysisTool(BaseTool):
         target_date: Optional[str] = None,
         week_start_date: Optional[str] = None,
         dietary_restrictions: Optional[list] = None,
+        diet_tags: Optional[list] = None,
         allergies: Optional[list] = None,
         favorite_cuisines: Optional[list] = None,
         avoided_foods: Optional[list] = None,
@@ -206,6 +212,8 @@ class DietAnalysisTool(BaseTool):
                 update_data = {}
                 if dietary_restrictions is not None:
                     update_data["dietary_restrictions"] = dietary_restrictions
+                if diet_tags is not None:
+                    update_data["diet_tags"] = diet_tags
                 if allergies is not None:
                     update_data["allergies"] = allergies
                 if favorite_cuisines is not None:

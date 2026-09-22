@@ -11,6 +11,7 @@ from typing import List, Optional
 from sqlalchemy import and_, delete, select
 
 from app.database.session import get_session_context
+from app.diet.preference_mapping import PREFERENCE_DB_FIELDS
 from app.diet.database.models import (
     DietLogItemModel,
     DietPlanMealModel,
@@ -351,6 +352,11 @@ class DietRepository:
         user_id: str,
         **kwargs,
     ) -> UserFoodPreferenceModel:
+        unknown_fields = set(kwargs) - PREFERENCE_DB_FIELDS
+        if unknown_fields:
+            unknown = ", ".join(sorted(unknown_fields))
+            raise ValueError(f"不支持的饮食偏好字段: {unknown}")
+
         async with get_session_context() as session:
             stmt = select(UserFoodPreferenceModel).where(
                 UserFoodPreferenceModel.user_id == user_id
@@ -360,8 +366,7 @@ class DietRepository:
 
             if pref:
                 for key, value in kwargs.items():
-                    if hasattr(pref, key):
-                        setattr(pref, key, value)
+                    setattr(pref, key, value)
                 pref.updated_at = datetime.utcnow()
             else:
                 pref = UserFoodPreferenceModel(user_id=user_id, **kwargs)

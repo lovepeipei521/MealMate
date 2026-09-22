@@ -169,10 +169,9 @@ class DietPlannerSubagent(BaseSubagent):
             prefs = context["user_preferences"]
             pref_parts = []
 
-            if prefs.get("dietary_restrictions"):
-                pref_parts.append(
-                    f"饮食限制: {', '.join(prefs['dietary_restrictions'])}"
-                )
+            diet_tags = prefs.get("diet_tags") or prefs.get("dietary_restrictions")
+            if diet_tags:
+                pref_parts.append(f"饮食限制: {', '.join(diet_tags)}")
             if prefs.get("allergies"):
                 pref_parts.append(f"过敏原: {', '.join(prefs['allergies'])}")
             if prefs.get("favorite_cuisines"):
@@ -184,6 +183,12 @@ class DietPlannerSubagent(BaseSubagent):
                 pref_parts.append(f"不喜欢的食物: {', '.join(avoided_foods)}")
             if prefs.get("calorie_goal"):
                 pref_parts.append(f"每日热量目标: {prefs['calorie_goal']} 千卡")
+            if prefs.get("protein_goal"):
+                pref_parts.append(f"每日蛋白质目标: {prefs['protein_goal']} 克")
+            if prefs.get("fat_goal"):
+                pref_parts.append(f"每日脂肪目标: {prefs['fat_goal']} 克")
+            if prefs.get("carbs_goal"):
+                pref_parts.append(f"每日碳水目标: {prefs['carbs_goal']} 克")
 
             if pref_parts:
                 parts.append("## 用户饮食偏好\n" + "\n".join(pref_parts))

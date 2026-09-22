@@ -172,8 +172,15 @@ class UserFoodPreferenceModel(Base):
         String(255), nullable=False, unique=True, index=True
     )
     common_foods: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    preferred_foods: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     avoided_foods: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     diet_tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    allergies: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    favorite_cuisines: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    calorie_goal: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    protein_goal: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fat_goal: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    carbs_goal: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     avg_daily_calories_min: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True
     )
@@ -194,8 +201,15 @@ class UserFoodPreferenceModel(Base):
             "id": str(self.id),
             "user_id": self.user_id,
             "common_foods": self.common_foods or [],
+            "preferred_foods": self.preferred_foods or [],
             "avoided_foods": self.avoided_foods or [],
             "diet_tags": self.diet_tags or [],
+            "allergies": self.allergies or [],
+            "favorite_cuisines": self.favorite_cuisines or [],
+            "calorie_goal": self.calorie_goal,
+            "protein_goal": self.protein_goal,
+            "fat_goal": self.fat_goal,
+            "carbs_goal": self.carbs_goal,
             "avg_daily_calories_min": self.avg_daily_calories_min,
             "avg_daily_calories_max": self.avg_daily_calories_max,
             "deviation_patterns": self.deviation_patterns or [],

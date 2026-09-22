@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config import settings
+from app.database.migrations import apply_compatibility_migrations
 from app.database.models import Base
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,7 @@ async def init_db() -> None:
     """Initialize database schema (create tables if not exist)."""
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await apply_compatibility_migrations(conn)
     logger.info("Database tables initialized.")
 
 
