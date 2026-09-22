@@ -8,6 +8,9 @@ from typing import Any
 PREFERENCE_ALIASES = {
     "dietary_restrictions": "diet_tags",
     "disliked_foods": "avoided_foods",
+    "goal": "health_goal",
+    "goal_description": "goal_note",
+    "goal_detail": "goal_note",
 }
 
 PREFERENCE_DB_FIELDS = frozenset(
@@ -16,6 +19,8 @@ PREFERENCE_DB_FIELDS = frozenset(
         "preferred_foods",
         "avoided_foods",
         "diet_tags",
+        "health_goal",
+        "goal_note",
         "allergies",
         "favorite_cuisines",
         "calorie_goal",

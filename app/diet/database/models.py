@@ -175,6 +175,8 @@ class UserFoodPreferenceModel(Base):
     preferred_foods: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     avoided_foods: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     diet_tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    health_goal: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    goal_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     allergies: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     favorite_cuisines: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     calorie_goal: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -204,6 +206,8 @@ class UserFoodPreferenceModel(Base):
             "preferred_foods": self.preferred_foods or [],
             "avoided_foods": self.avoided_foods or [],
             "diet_tags": self.diet_tags or [],
+            "health_goal": self.health_goal,
+            "goal_note": self.goal_note,
             "allergies": self.allergies or [],
             "favorite_cuisines": self.favorite_cuisines or [],
             "calorie_goal": self.calorie_goal,

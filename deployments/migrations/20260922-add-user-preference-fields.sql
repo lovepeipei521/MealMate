@@ -5,6 +5,8 @@ ALTER TABLE IF EXISTS public.user_food_preferences
     ADD COLUMN IF NOT EXISTS preferred_foods jsonb,
     ADD COLUMN IF NOT EXISTS allergies jsonb,
     ADD COLUMN IF NOT EXISTS favorite_cuisines jsonb,
+    ADD COLUMN IF NOT EXISTS health_goal varchar(50),
+    ADD COLUMN IF NOT EXISTS goal_note text,
     ADD COLUMN IF NOT EXISTS calorie_goal integer,
     ADD COLUMN IF NOT EXISTS protein_goal real,
     ADD COLUMN IF NOT EXISTS fat_goal real,
@@ -12,6 +14,8 @@ ALTER TABLE IF EXISTS public.user_food_preferences
 
 COMMENT ON COLUMN public.user_food_preferences.allergies IS '用户过敏原列表';
 COMMENT ON COLUMN public.user_food_preferences.favorite_cuisines IS '用户喜爱的菜系列表';
+COMMENT ON COLUMN public.user_food_preferences.health_goal IS '主要健康目标';
+COMMENT ON COLUMN public.user_food_preferences.goal_note IS '用户目标的自然语言说明';
 COMMENT ON COLUMN public.user_food_preferences.calorie_goal IS '每日卡路里目标';
 COMMENT ON COLUMN public.user_food_preferences.protein_goal IS '每日蛋白质目标(克)';
 COMMENT ON COLUMN public.user_food_preferences.fat_goal IS '每日脂肪目标(克)';

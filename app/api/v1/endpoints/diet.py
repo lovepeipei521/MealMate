@@ -156,6 +156,8 @@ class UpdatePreferenceRequest(BaseModel):
 
     dietary_restrictions: Optional[List[str]] = Field(None, description="饮食限制")
     diet_tags: Optional[List[str]] = Field(None, description="饮食标签")
+    health_goal: Optional[str] = Field(None, description="主要健康目标")
+    goal_note: Optional[str] = Field(None, description="目标说明")
     allergies: Optional[List[str]] = Field(None, description="过敏原")
     favorite_cuisines: Optional[List[str]] = Field(None, description="喜爱的菜系")
     avoided_foods: Optional[List[str]] = Field(None, description="不喜欢的食物")

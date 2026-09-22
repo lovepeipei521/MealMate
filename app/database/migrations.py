@@ -10,6 +10,8 @@ _PREFERENCE_COLUMN_MIGRATIONS = (
         ADD COLUMN IF NOT EXISTS preferred_foods jsonb,
         ADD COLUMN IF NOT EXISTS allergies jsonb,
         ADD COLUMN IF NOT EXISTS favorite_cuisines jsonb,
+        ADD COLUMN IF NOT EXISTS health_goal varchar(50),
+        ADD COLUMN IF NOT EXISTS goal_note text,
         ADD COLUMN IF NOT EXISTS calorie_goal integer,
         ADD COLUMN IF NOT EXISTS protein_goal real,
         ADD COLUMN IF NOT EXISTS fat_goal real,

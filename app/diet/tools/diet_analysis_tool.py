@@ -65,7 +65,24 @@ class DietAnalysisTool(BaseTool):
             "diet_tags": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "饮食标签，如 ['fat_loss', 'low_carb_dinner']",
+                "description": "饮食策略或限制标签，如 ['low_carb_dinner', 'high_protein']",
+            },
+            "health_goal": {
+                "type": "string",
+                "enum": [
+                    "fat_loss",
+                    "muscle_gain",
+                    "weight_maintenance",
+                    "healthy_eating",
+                    "blood_sugar_control",
+                    "blood_pressure_control",
+                    "other",
+                ],
+                "description": "主要健康目标；减脂填 fat_loss，增肌填 muscle_gain，维持体重填 weight_maintenance，其他健康饮食目标填 healthy_eating 或对应枚举",
+            },
+            "goal_note": {
+                "type": "string",
+                "description": "目标说明，例如 '减脂，晚餐尽量少碳水，保持饱腹感'；用于保存无法用单一枚举表达的目标细节",
             },
             "allergies": {
                 "type": "array",
@@ -120,6 +137,8 @@ class DietAnalysisTool(BaseTool):
         week_start_date: Optional[str] = None,
         dietary_restrictions: Optional[list] = None,
         diet_tags: Optional[list] = None,
+        health_goal: Optional[str] = None,
+        goal_note: Optional[str] = None,
         allergies: Optional[list] = None,
         favorite_cuisines: Optional[list] = None,
         avoided_foods: Optional[list] = None,
@@ -214,6 +233,10 @@ class DietAnalysisTool(BaseTool):
                     update_data["dietary_restrictions"] = dietary_restrictions
                 if diet_tags is not None:
                     update_data["diet_tags"] = diet_tags
+                if health_goal is not None:
+                    update_data["health_goal"] = health_goal
+                if goal_note is not None:
+                    update_data["goal_note"] = goal_note
                 if allergies is not None:
                     update_data["allergies"] = allergies
                 if favorite_cuisines is not None:

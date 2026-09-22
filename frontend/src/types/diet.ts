@@ -115,6 +115,8 @@ export interface UserFoodPreference {
   preferred_foods?: string[];
   avoided_foods?: string[];
   diet_tags?: string[];
+  health_goal?: string;
+  goal_note?: string;
   allergies?: string[];
   favorite_cuisines?: string[];
   calorie_goal?: number;
@@ -186,6 +188,8 @@ export interface MarkMealEatenRequest {
 export interface UpdatePreferenceRequest {
   dietary_restrictions?: string[];
   diet_tags?: string[];
+  health_goal?: string;
+  goal_note?: string;
   allergies?: string[];
   favorite_cuisines?: string[];
   avoided_foods?: string[];

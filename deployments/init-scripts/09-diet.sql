@@ -91,6 +91,8 @@ CREATE TABLE "public"."user_food_preferences" (
     "preferred_foods" jsonb,
     "avoided_foods" jsonb,
     "diet_tags" jsonb,
+    "health_goal" varchar(50),
+    "goal_note" text,
     "allergies" jsonb,
     "favorite_cuisines" jsonb,
     "calorie_goal" integer,
@@ -111,6 +113,8 @@ COMMENT ON COLUMN "public"."user_food_preferences"."user_id" IS '用户ID，唯�
 COMMENT ON COLUMN "public"."user_food_preferences"."common_foods" IS '常见食物列表及其频率';
 COMMENT ON COLUMN "public"."user_food_preferences"."avoided_foods" IS '用户避免的食物';
 COMMENT ON COLUMN "public"."user_food_preferences"."diet_tags" IS '饮食标签: vegetarian, low-carb 等';
+COMMENT ON COLUMN "public"."user_food_preferences"."health_goal" IS '主要健康目标: fat_loss, muscle_gain 等';
+COMMENT ON COLUMN "public"."user_food_preferences"."goal_note" IS '用户目标的自然语言说明';
 COMMENT ON COLUMN "public"."user_food_preferences"."deviation_patterns" IS '偏差模式，分析用户实际与计划的偏差';
 COMMENT ON COLUMN "public"."user_food_preferences"."stats" IS '统计信息';
 

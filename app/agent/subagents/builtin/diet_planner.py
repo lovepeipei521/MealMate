@@ -169,9 +169,13 @@ class DietPlannerSubagent(BaseSubagent):
             prefs = context["user_preferences"]
             pref_parts = []
 
+            if prefs.get("health_goal"):
+                pref_parts.append(f"主要健康目标: {prefs['health_goal']}")
+            if prefs.get("goal_note"):
+                pref_parts.append(f"目标说明: {prefs['goal_note']}")
             diet_tags = prefs.get("diet_tags") or prefs.get("dietary_restrictions")
             if diet_tags:
-                pref_parts.append(f"饮食限制: {', '.join(diet_tags)}")
+                pref_parts.append(f"饮食策略/限制: {', '.join(diet_tags)}")
             if prefs.get("allergies"):
                 pref_parts.append(f"过敏原: {', '.join(prefs['allergies'])}")
             if prefs.get("favorite_cuisines"):
