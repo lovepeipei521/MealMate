@@ -183,8 +183,9 @@ MealMate is built for kitchen beginners, fitness/weight-loss users, glycemic con
    source .venv/bin/activate  # Windows: .venv\Scripts\activate
    pip install -r requirements.txt
 
-   # Initialize database
-   python -m scripts.howtocook_loader
+   # Sync and ingest the global HowToCook knowledge base
+   python -m scripts.sync_data
+   python -m scripts.run_ingestion
 
    # Start backend service
    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

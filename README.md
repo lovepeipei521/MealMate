@@ -184,8 +184,9 @@ MealMate 面向厨房新手、健身/减脂/控糖人群、健康饮食倡导者
    source .venv/bin/activate  # Windows: .venv\Scripts\activate
    pip install -r requirements.txt
    
-   # 初始化数据库
-   python -m scripts.howtocook_loader
+   # 同步并导入全局 HowToCook 知识库
+   python -m scripts.sync_data
+   python -m scripts.run_ingestion
    
    # 启动后端服务
    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

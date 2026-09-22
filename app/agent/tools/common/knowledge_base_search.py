@@ -46,6 +46,7 @@ class KnowledgeBaseSearchTool(BaseTool):
             retrieval_result = await rag_service_instance.retrieve(
                 query=query,
                 skip_rewrite=skip_rewrite,
+                user_id=kwargs.get("user_id"),
             )
 
             return ToolResult(
