@@ -149,7 +149,7 @@ vision:
     # Enable/disable vision features
     enabled: true
     # Model configuration (OpenAI-compatible API)
-    model_name: "/DeepSeek-V4-Flash-Vision-Exp"
+    model_name: "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp"
     base_url: "https://api-inference.modelscope.cn/v1"
     # api_key: Loaded from .env (VISION_API_KEY or LLM_API_KEY)
     temperature: 0.7
