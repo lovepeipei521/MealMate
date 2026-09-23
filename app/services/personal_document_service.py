@@ -80,7 +80,14 @@ class PersonalDocumentService:
             raise ValueError(f"data_source must be one of: {', '.join(self.ALLOWED_SOURCES)}")
 
         # Update document via repository
-        await self.delete_document(user_id, document_id)
+        deleted = await self.delete_document(user_id, document_id)
+        if not deleted:
+            logger.warning(
+                "Personal document update rejected id=%s user=%s: document not found or not owned by user",
+                document_id,
+                user_id,
+            )
+            return None
 
         doc = await document_repository.create(
             doc_id=document_id,
