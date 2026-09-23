@@ -4,6 +4,7 @@ API endpoints for LLM usage statistics.
 Provides access to token usage, model distribution, and module-level metrics.
 """
 
+import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -198,9 +199,26 @@ async def get_conversation_llm_stats(
     Returns a list of LLM usage records for the conversation,
     including token counts, models used, and timing information.
     """
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="需要登录")
+
+    try:
+        uuid.UUID(conversation_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    owner_ids = await llm_usage_repository.get_conversation_user_ids(
+        conversation_id
+    )
+    allowed_owner_ids = {str(owner) for owner in owner_ids if owner is not None}
+    if allowed_owner_ids and str(user_id) not in allowed_owner_ids:
+        raise HTTPException(status_code=403, detail="无权访问此会话的统计信息")
+
     logs = await llm_usage_repository.get_by_conversation(
         conversation_id=conversation_id,
         limit=limit,
+        user_id=str(user_id),
     )
 
     # Calculate totals for the conversation

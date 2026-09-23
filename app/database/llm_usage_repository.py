@@ -314,10 +314,29 @@ class LLMUsageRepository:
 
     # ==================== Conversation Level Stats ====================
 
+    async def get_conversation_user_ids(
+        self, conversation_id: str
+    ) -> set[Optional[str]]:
+        """Get the distinct owner IDs recorded for a conversation."""
+        try:
+            conv_uuid = uuid.UUID(conversation_id)
+        except ValueError:
+            return set()
+
+        async with get_session_context() as session:
+            stmt = (
+                select(LLMUsageLogModel.user_id)
+                .where(LLMUsageLogModel.conversation_id == conv_uuid)
+                .distinct()
+            )
+            result = await session.execute(stmt)
+            return set(result.scalars().all())
+
     async def get_by_conversation(
         self,
         conversation_id: str,
         limit: int = 100,
+        user_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get LLM usage logs for a specific conversation.
@@ -325,13 +344,20 @@ class LLMUsageRepository:
         Returns:
             List of usage log entries
         """
+        try:
+            conv_uuid = uuid.UUID(conversation_id)
+        except ValueError:
+            return []
+
         async with get_session_context() as session:
             stmt = (
                 select(LLMUsageLogModel)
-                .where(LLMUsageLogModel.conversation_id == uuid.UUID(conversation_id))
+                .where(LLMUsageLogModel.conversation_id == conv_uuid)
                 .order_by(LLMUsageLogModel.created_at.desc())
-                .limit(limit)
             )
+            if user_id:
+                stmt = stmt.where(LLMUsageLogModel.user_id == user_id)
+            stmt = stmt.limit(limit)
 
             result = await session.execute(stmt)
             logs = result.scalars().all()

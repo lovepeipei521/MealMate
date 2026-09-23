@@ -849,15 +849,29 @@ class ConversationService:
     # Other Public Methods
     # =========================================================================
 
+    async def get_conversation(
+        self, conversation_id: str, user_id: Optional[str] = None
+    ):
+        """Get a conversation owned by the current user."""
+        return await conversation_repository.get_conversation(
+            conversation_id, user_id=user_id
+        )
+
     async def get_conversation_history(
-        self, conversation_id: str
+        self, conversation_id: str, user_id: Optional[str] = None
     ) -> Optional[List[Dict]]:
         """Get conversation history."""
-        return await conversation_repository.get_history(conversation_id)
+        return await conversation_repository.get_history(
+            conversation_id, user_id=user_id
+        )
 
-    async def clear_conversation(self, conversation_id: str) -> bool:
+    async def clear_conversation(
+        self, conversation_id: str, user_id: Optional[str] = None
+    ) -> bool:
         """Clear a conversation."""
-        return await conversation_repository.clear(conversation_id)
+        return await conversation_repository.clear(
+            conversation_id, user_id=user_id
+        )
 
     async def list_conversations(
         self,
@@ -876,9 +890,16 @@ class ConversationService:
             offset=offset,
         )
 
-    async def update_conversation_title(self, conversation_id: str, title: str) -> bool:
+    async def update_conversation_title(
+        self,
+        conversation_id: str,
+        title: str,
+        user_id: Optional[str] = None,
+    ) -> bool:
         """Update the title of a conversation."""
-        return await conversation_repository.update_title(conversation_id, title)
+        return await conversation_repository.update_title(
+            conversation_id, title, user_id=user_id
+        )
 
 
 # Singleton instance

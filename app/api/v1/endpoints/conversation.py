@@ -137,6 +137,15 @@ async def conversation(request: ConversationRequest, http_request: Request):
     # Use queue-based approach to ensure backend continues even if client disconnects
     queue: asyncio.Queue[str | None] = asyncio.Queue()
     user_id = getattr(http_request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="需要登录")
+
+    if request.conversation_id:
+        conversation = await conversation_service.get_conversation(
+            request.conversation_id, user_id=str(user_id)
+        )
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
 
     async def process_in_background():
         """Background task that processes the chat and puts results in queue.
@@ -237,7 +246,7 @@ async def conversation(request: ConversationRequest, http_request: Request):
 
 
 @router.get("/conversation/{conversation_id}")
-async def get_conversation_history(conversation_id: str):
+async def get_conversation_history(conversation_id: str, http_request: Request):
     """
     Get the history of a conversation.
     
@@ -267,7 +276,13 @@ async def get_conversation_history(conversation_id: str):
     }
     ```
     """
-    history = await conversation_service.get_conversation_history(conversation_id)
+    user_id = getattr(http_request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="需要登录")
+
+    history = await conversation_service.get_conversation_history(
+        conversation_id, user_id=str(user_id)
+    )
     
     if history is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -279,14 +294,20 @@ async def get_conversation_history(conversation_id: str):
 
 
 @router.delete("/conversation/{conversation_id}")
-async def clear_conversation(conversation_id: str):
+async def clear_conversation(conversation_id: str, http_request: Request):
     """
     Clear/delete a conversation.
     
     **Parameters:**
     - `conversation_id`: The ID of the conversation to delete
     """
-    success = await conversation_service.clear_conversation(conversation_id)
+    user_id = getattr(http_request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="需要登录")
+
+    success = await conversation_service.clear_conversation(
+        conversation_id, user_id=str(user_id)
+    )
     
     if not success:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -300,7 +321,9 @@ class UpdateTitleRequest(BaseModel):
 
 
 @router.put("/conversation/{conversation_id}/title")
-async def update_conversation_title(conversation_id: str, request: UpdateTitleRequest):
+async def update_conversation_title(
+    conversation_id: str, request: UpdateTitleRequest, http_request: Request
+):
     """
     Update the title of a conversation.
     
@@ -308,7 +331,13 @@ async def update_conversation_title(conversation_id: str, request: UpdateTitleRe
     - `conversation_id`: The ID of the conversation
     - `title`: The new title for the conversation
     """
-    success = await conversation_service.update_conversation_title(conversation_id, request.title)
+    user_id = getattr(http_request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="需要登录")
+
+    success = await conversation_service.update_conversation_title(
+        conversation_id, request.title, user_id=str(user_id)
+    )
     
     if not success:
         raise HTTPException(status_code=404, detail="Conversation not found")

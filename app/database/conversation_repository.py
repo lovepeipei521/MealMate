@@ -39,6 +39,8 @@ class ConversationRepository:
                         .options(selectinload(ConversationModel.messages))
                         .where(ConversationModel.id == conv_uuid)
                     )
+                    if user_id:
+                        stmt = stmt.where(ConversationModel.user_id == user_id)
                     result = await session.execute(stmt)
                     conversation = result.scalar_one_or_none()
                     if conversation:
@@ -96,12 +98,23 @@ class ConversationRepository:
         self,
         conversation_id: str,
         limit: Optional[int] = None,
+        user_id: Optional[str] = None,
     ) -> Optional[List[dict]]:
         """Get conversation history as list of dicts."""
         async with get_session_context() as session:
             try:
                 conv_uuid = uuid.UUID(conversation_id)
             except ValueError:
+                return None
+
+            conv_stmt = select(ConversationModel).where(
+                ConversationModel.id == conv_uuid
+            )
+            if user_id:
+                conv_stmt = conv_stmt.where(ConversationModel.user_id == user_id)
+
+            conv_result = await session.execute(conv_stmt)
+            if conv_result.scalar_one_or_none() is None:
                 return None
 
             stmt = (
@@ -114,17 +127,6 @@ class ConversationRepository:
 
             result = await session.execute(stmt)
             messages = result.scalars().all()
-
-            if not messages:
-                # Check if conversation exists
-                conv_stmt = select(ConversationModel).where(
-                    ConversationModel.id == conv_uuid
-                )
-                conv_result = await session.execute(conv_stmt)
-                if not conv_result.scalar_one_or_none():
-                    return None
-                return []
-
             return [msg.to_dict() for msg in messages]
 
     async def get_messages(
@@ -146,7 +148,9 @@ class ConversationRepository:
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-    async def clear(self, conversation_id: str) -> bool:
+    async def clear(
+        self, conversation_id: str, user_id: Optional[str] = None
+    ) -> bool:
         """Delete a conversation and all its messages."""
         async with get_session_context() as session:
             try:
@@ -155,10 +159,17 @@ class ConversationRepository:
                 return False
 
             stmt = delete(ConversationModel).where(ConversationModel.id == conv_uuid)
+            if user_id:
+                stmt = stmt.where(ConversationModel.user_id == user_id)
             result = await session.execute(stmt)
             return result.rowcount > 0  # type: ignore
 
-    async def update_title(self, conversation_id: str, title: str) -> bool:
+    async def update_title(
+        self,
+        conversation_id: str,
+        title: str,
+        user_id: Optional[str] = None,
+    ) -> bool:
         """Update the title of a conversation."""
         async with get_session_context() as session:
             try:
@@ -167,6 +178,8 @@ class ConversationRepository:
                 return False
 
             stmt = select(ConversationModel).where(ConversationModel.id == conv_uuid)
+            if user_id:
+                stmt = stmt.where(ConversationModel.user_id == user_id)
             result = await session.execute(stmt)
             conversation = result.scalar_one_or_none()
 
@@ -225,7 +238,7 @@ class ConversationRepository:
             return [conv.to_dict() for conv in conversations], total_count
 
     async def get_conversation(
-        self, conversation_id: str
+        self, conversation_id: str, user_id: Optional[str] = None
     ) -> Optional[ConversationModel]:
         """Get a single conversation by ID."""
         async with get_session_context() as session:
@@ -239,6 +252,8 @@ class ConversationRepository:
                 .options(selectinload(ConversationModel.messages))
                 .where(ConversationModel.id == conv_uuid)
             )
+            if user_id:
+                stmt = stmt.where(ConversationModel.user_id == user_id)
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 

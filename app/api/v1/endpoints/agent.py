@@ -375,6 +375,13 @@ async def agent_chat(request: AgentChatRequest, http_request: Request):
     if not user_id:
         raise HTTPException(status_code=401, detail="需要登录")
 
+    if request.session_id:
+        session = await agent_service.get_session(request.session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if session.get("user_id") != str(user_id):
+            raise HTTPException(status_code=403, detail="无权访问此会话")
+
     # Use queue-based approach to ensure backend continues even if client disconnects
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
