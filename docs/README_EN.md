@@ -39,8 +39,6 @@
 
 MealMate is built for kitchen beginners, fitness/weight-loss users, glycemic control scenarios, allergy-sensitive users, and family kitchens—making cooking more professional, intelligent, and sustainable.
 
-> **Naming note**: The project used the prototype name CookHero in its early stage and was later renamed to MealMate to align its branding and product positioning. The CookHero baseline entry in Git history refers to that early prototype; current code, configuration, and documentation all use MealMate.
-
 > The internal recipe library is sourced from [Anduin2017/HowToCook](https://github.com/Anduin2017/HowToCook), thanks to the contributors of that project!
 
 ---

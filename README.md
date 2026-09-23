@@ -43,8 +43,6 @@
 
 MealMate 面向厨房新手、健身/减脂/控糖人群、健康饮食倡导者、过敏体质用户及家庭场景，致力于让烹饪更专业、更智能、更可持续。
 
-> **关于名称**：项目早期原型使用 CookHero 作为名称，后来为了统一品牌与产品定位更名为 MealMate。Git 历史中出现的 CookHero baseline 指早期原型版本；当前代码、配置和文档均以 MealMate 为准。
-
 > 内部自带的食谱来源于[Anduin2017/HowToCook](https://github.com/Anduin2017/HowToCook)，感谢该项目的贡献者！
 
 ---

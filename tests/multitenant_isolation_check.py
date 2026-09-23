@@ -3,7 +3,7 @@
 
 用法:
     python -m tests.multitenant_isolation_check --base-url http://127.0.0.1:8000
-    python -m tests.multitenant_isolation_check --base-url http://127.0.0.1:8000 --verbose
+    python -m tests.multitenant_isolation_check --base-url http://127.0.0.1:8000 --verbose --cleanup-users
 
 脚本会临时注册两个普通用户 A/B，然后检查 B 是否能访问、修改或写入 A 的：
   - Agent 会话
@@ -12,7 +12,7 @@
   - 饮食记录
   - LLM 统计明细
 
-它不会删除用户账号，也不会碰已有业务数据。Agent/传统对话测试会真实调用一次 LLM；
+默认不会删除用户账号；若使用 --cleanup-users，会删除本次创建的两个临时用户及其关联数据。Agent/传统对话测试会真实调用一次 LLM；
 如果只想跑不需要模型的资源隔离，可以加 --skip-llm。
 """
 
@@ -76,12 +76,14 @@ class ApiChecker:
         verbose: bool,
         skip_llm: bool,
         stats_wait: float,
+        cleanup_users: bool,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_prefix = "/" + api_prefix.strip("/")
         self.verbose = verbose
         self.skip_llm = skip_llm
         self.stats_wait = stats_wait
+        self.cleanup_users = cleanup_users
         self.client = httpx.Client(
             base_url=self.base_url,
             timeout=httpx.Timeout(timeout, connect=10.0),
@@ -221,6 +223,12 @@ class ApiChecker:
         suffix = uuid.uuid4().hex[:6]
         username = f"mt_{role}_{stamp}_{suffix}"
         password = f"MealMate-{role}-{suffix}!"
+        # Record the generated username before registration so cleanup can
+        # remove a partially created account even if the token is missing.
+        if role == "a":
+            self.username_a = username
+        else:
+            self.username_b = username
 
         response = self.request(
             "POST",
@@ -688,6 +696,109 @@ class ApiChecker:
             )
             print(f"  传统对话清理: HTTP {response.status_code}", flush=True)
 
+    async def _cleanup_test_users_async(self) -> int:
+        """Delete only the exact usernames created by this script run."""
+        usernames = [name for name in (self.username_a, self.username_b) if name]
+        if not usernames:
+            return 0
+
+        import asyncpg
+        from app.config import settings
+
+        postgres = settings.database.postgres
+        connection = await asyncpg.connect(
+            host=postgres.host,
+            port=postgres.port,
+            database=postgres.database,
+            user=postgres.user,
+            password=postgres.password or None,
+            timeout=10.0,
+        )
+        try:
+            async with connection.transaction():
+                rows = await connection.fetch(
+                    "SELECT id::text AS id FROM users WHERE username = ANY($1::text[])",
+                    usernames,
+                )
+                user_ids = [row["id"] for row in rows]
+                if not user_ids:
+                    return 0
+
+                # These tables use independent user_id values rather than a
+                # foreign key to users, so delete their rows explicitly first.
+                await connection.execute(
+                    """
+                    DELETE FROM rag_evaluations
+                    WHERE user_id = ANY($1::text[])
+                       OR conversation_id IN (
+                           SELECT id FROM conversations
+                           WHERE user_id = ANY($1::text[])
+                       )
+                    """,
+                    user_ids,
+                )
+                await connection.execute(
+                    """
+                    DELETE FROM llm_usage_logs
+                    WHERE user_id = ANY($1::text[])
+                       OR conversation_id IN (
+                           SELECT id FROM conversations
+                           WHERE user_id = ANY($1::text[])
+                       )
+                    """,
+                    user_ids,
+                )
+                await connection.execute(
+                    """
+                    DELETE FROM agent_messages
+                    WHERE session_id IN (
+                        SELECT id FROM agent_sessions
+                        WHERE user_id = ANY($1::text[])
+                    )
+                    """,
+                    user_ids,
+                )
+                await connection.execute(
+                    """
+                    DELETE FROM messages
+                    WHERE conversation_id IN (
+                        SELECT id FROM conversations
+                        WHERE user_id = ANY($1::text[])
+                    )
+                    """,
+                    user_ids,
+                )
+                for table in (
+                    "conversations",
+                    "agent_sessions",
+                    "agent_mcp_servers",
+                    "agent_subagent_configs",
+                    "diet_log_items",
+                    "diet_plan_meals",
+                    "user_food_preferences",
+                ):
+                    await connection.execute(
+                        f'DELETE FROM "{table}" WHERE user_id = ANY($1::text[])',
+                        user_ids,
+                    )
+                await connection.execute(
+                    "DELETE FROM knowledge_documents WHERE user_id::text = ANY($1::text[])",
+                    user_ids,
+                )
+                await connection.execute(
+                    "DELETE FROM users WHERE id::text = ANY($1::text[])",
+                    user_ids,
+                )
+            return len(user_ids)
+        finally:
+            await connection.close()
+
+    def cleanup_test_users(self) -> int:
+        """Run the async user cleanup from the synchronous CLI."""
+        import asyncio
+
+        return asyncio.run(self._cleanup_test_users_async())
+
     def run(self) -> int:
         print(f"MealMate 多租户隔离检查")
         print(f"Base URL: {self.base_url}")
@@ -697,15 +808,16 @@ class ApiChecker:
         print("", flush=True)
 
         user_a = self.register_user("a")
+        if user_a:
+            self.token_a = user_a["token"]
+
         user_b = self.register_user("b")
+        if user_b:
+            self.token_b = user_b["token"]
+
         if not user_a or not user_b:
             print("\n无法注册临时用户，终止检查。", file=sys.stderr)
             return 2
-
-        self.username_a = user_a["username"]
-        self.username_b = user_b["username"]
-        self.token_a = user_a["token"]
-        self.token_b = user_b["token"]
 
         self.create_agent_session()
         self.create_personal_doc()
@@ -734,10 +846,16 @@ class ApiChecker:
             for result in problems:
                 print(f"  [{result.status}] [{result.category}] {result.name} - {result.detail}")
 
-        print("\n测试账号不会被自动删除:")
-        print(f"  A: {self.username_a}")
-        print(f"  B: {self.username_b}")
-        print("  （账号用于保留可追溯证据；如不需要，可在管理端或数据库中手动清理。）")
+        if self.cleanup_users:
+            print("\nTest users will be deleted after the check:")
+            print(f"  A: {self.username_a}")
+            print(f"  B: {self.username_b}")
+            print("  (Only this run's exact usernames are deleted.)")
+        else:
+            print("\nTest users will be kept for evidence:")
+            print(f"  A: {self.username_a}")
+            print(f"  B: {self.username_b}")
+            print("  (Use --cleanup-users to delete them automatically.)")
 
         if counts[FAIL] or counts[VULNERABLE]:
             return 1
@@ -778,6 +896,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="跳过 Agent、传统对话和 LLM 统计测试，只测试不需要模型的资源隔离",
     )
+    parser.add_argument(
+        "--cleanup-users",
+        action="store_true",
+        help="测试结束后删除本次创建的两个临时用户及其关联数据",
+    )
     return parser
 
 
@@ -790,6 +913,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         verbose=args.verbose,
         skip_llm=args.skip_llm,
         stats_wait=args.stats_wait,
+        cleanup_users=args.cleanup_users,
     )
     try:
         return checker.run()
@@ -805,6 +929,14 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 checker.cleanup()
         except Exception as exc:  # cleanup 不应覆盖真正的测试结果
             print(f"\n清理临时数据时出错（不影响上面的检查结论）: {exc}", file=sys.stderr)
+
+        if checker.cleanup_users:
+            try:
+                deleted_users = checker.cleanup_test_users()
+                print(f"Temporary users deleted: {deleted_users}", flush=True)
+            except Exception as exc:
+                print(f"\nFailed to clean temporary users: {exc}", file=sys.stderr)
+
         checker.close()
 
 
