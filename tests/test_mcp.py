@@ -1,192 +1,172 @@
-#!/usr/bin/env python3
-"""
-MCP Test Script
+"""Unit tests for the MCP client and setup integration."""
 
-Tests the MCP client and registry functionality.
-Run from project root: python -m tests.test_mcp
-"""
+from __future__ import annotations
 
-import asyncio
-import logging
-import sys
-from pathlib import Path
+import pytest
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+from app.agent.registry import AgentHub
+from app.agent.tools.mcp import setup as mcp_setup
+from app.agent.tools.mcp.client import MCPClient
+from app.agent.tools.providers.mcp import MCPToolProvider
+from app.agent.types import ToolResult
 
 
-async def test_mcp_client():
-    """Test MCP client directly."""
+@pytest.fixture(autouse=True)
+def reset_agent_hub():
+    """Keep MCP tests independent from global AgentHub state."""
+    AgentHub.clear_all()
+    yield
+    AgentHub.clear_all()
+
+
+@pytest.mark.asyncio
+async def test_mcp_client(monkeypatch):
+    """Verify the MCP client protocol methods without external network calls."""
+    client = MCPClient("https://mcp.example/mcp")
+    requests: list[tuple[str, dict | None]] = []
+
+    async def fake_send_request(method, params=None):
+        requests.append((method, params))
+
+        if method == "initialize":
+            return {"protocolVersion": "2024-11-05"}
+
+        if method == "tools/list":
+            return {
+                "tools": [
+                    {
+                        "name": "maps_weather",
+                        "description": "Query weather",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"city": {"type": "string"}},
+                        },
+                    }
+                ]
+            }
+
+        if method == "tools/call":
+            return {"content": [{"type": "text", "text": "苏州天气晴，26℃"}]}
+
+        raise AssertionError(f"Unexpected MCP method: {method}")
+
+    monkeypatch.setattr(client, "_send_request", fake_send_request)
+
+    initialize_result = await client.initialize()
+    tools = await client.list_tools()
+    tool_result = await client.call_tool("maps_weather", {"city": "苏州"})
+
+    assert initialize_result["protocolVersion"] == "2024-11-05"
+    assert tools[0]["name"] == "maps_weather"
+    assert tool_result == ToolResult(success=True, data="苏州天气晴，26℃")
+    assert [request[0] for request in requests] == [
+        "initialize",
+        "tools/list",
+        "tools/call",
+    ]
+    assert requests[-1][1] == {
+        "name": "maps_weather",
+        "arguments": {"city": "苏州"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_mcp_registry(monkeypatch):
+    """Verify the public MCP setup entry registers Amap for the MCP provider."""
     from app.config import settings
-    from app.agent.tools.mcp.client import MCPClient  # noqa: F401
 
-    print("\n" + "=" * 60)
-    print("Testing MCP Client")
-    print("=" * 60)
+    provider = MCPToolProvider()
+    AgentHub.register_provider(provider)
 
-    # Check API key
-    amap_key = settings.mcp.amap_api_key
-    if not amap_key:
-        print("ERROR: AMAP_API_KEY not configured!")
-        print("Please set AMAP_API_KEY in your .env file")
-        return
+    monkeypatch.setattr(settings.mcp.amap, "enabled", True)
+    monkeypatch.setattr(settings.mcp, "amap_api_key", "test-amap-key")
 
-    print(f"AMAP API Key: {amap_key[:8]}...")
+    loaded_servers: list[str] = []
 
-    # Build endpoint - use StreamableHTTP (recommended by Amap)
-    endpoint = f"https://mcp.amap.com/mcp?key={amap_key}"
-    print(f"Endpoint: {endpoint}")
+    async def fake_load_server_tools(self, name):
+        loaded_servers.append(name)
+        return []
 
-    # Create client
-    client = MCPClient(endpoint)
+    async def skip_custom_servers():
+        return None
 
-    try:
-        # Initialize
-        print("\n--- Initializing MCP session ---")
-        init_result = await client.initialize()
-        print(f"Initialize result: {init_result}")
-
-        # List tools
-        print("\n--- Listing available tools ---")
-        tools = await client.list_tools()
-        print(f"Found {len(tools)} tools:")
-        for tool in tools:
-            print(
-                f"  - {tool.get('name')}: {tool.get('description', 'No description')[:50]}..."
-            )
-
-        # Try calling a tool
-        if tools:
-            tool_name = tools[0].get("name")
-            print(f"\n--- Testing tool call: {tool_name} ---")
-
-            # Find a weather tool or use first tool
-            weather_tool = next(
-                (t for t in tools if "weather" in t.get("name", "").lower()), None
-            )
-            if weather_tool:
-                print(f"Found weather tool: {weather_tool.get('name')}")
-                result = await client.call_tool(
-                    weather_tool.get("name") or "", {"city": "苏州"}
-                )
-                print(f"Result: {result}")
-
-    except Exception as e:
-        logger.exception(f"MCP client test failed: {e}")
-        print(f"ERROR: {e}")
-
-
-async def test_mcp_registry():
-    """Test MCP provider and tool loading."""
-    from app.config import settings
-    from app.agent import setup_agent_module
-    from app.agent.registry import AgentHub  # noqa: F401
-    from app.agent.tools.mcp.setup import register_amap_mcp  # noqa: F401
-
-    print("\n" + "=" * 60)
-    print("Testing MCP Registry")
-    print("=" * 60)
-
-    # Check if amap is enabled
-    print(f"Amap MCP enabled: {settings.mcp.amap.enabled}")
-    print(f"Amap API key configured: {bool(settings.mcp.amap_api_key)}")
-
-    # Initialize module (providers + builtin tools + default agent)
-    setup_agent_module()
-
-    # Register amap MCP
-    print("\n--- Registering Amap MCP ---")
-    await register_amap_mcp()
-
-    # List registered servers
-    print("\n--- Registered MCP servers ---")
-    mcp_provider = AgentHub.get_provider("mcp")
-    servers = (
-        getattr(mcp_provider, "list_servers")()
-        if hasattr(mcp_provider, "list_servers")
-        else []
+    monkeypatch.setattr(MCPToolProvider, "load_server_tools", fake_load_server_tools)
+    monkeypatch.setattr(
+        mcp_setup,
+        "_register_custom_mcp_servers",
+        skip_custom_servers,
     )
-    print(f"Servers: {servers}")
 
-    # List tools for each server
-    for server in servers:
-        tools = []  # MCP tools are loaded into AgentHub provider
-        print(f"Tools from {server}: {tools}")
+    await mcp_setup.register_mcp_servers()
 
-    # List all registered tools in AgentHub
-    print("\n--- All registered tools in AgentHub ---")
-    all_tools = AgentHub.list_tools()
-    print(f"Total tools: {len(all_tools)}")
-    for tool_name in all_tools:
-        tool = AgentHub.get_tool(tool_name)
-        tool_type = "mcp" if tool_name.startswith("mcp_") else "builtin"
-        print(
-            f"  - [{tool_type}] {tool_name}: {tool.description[:50] if tool else 'N/A'}..."
-        )
+    assert provider.list_servers() == ["amap"]
+    assert provider._servers["amap"] == (
+        "https://mcp.amap.com/mcp?key=test-amap-key"
+    )
+    assert loaded_servers == ["amap"]
 
 
-async def test_tool_execution():
-    """Test executing an MCP tool through the registry."""
-    from app.agent.tools.mcp.setup import register_amap_mcp  # noqa: F401
-    from app.agent import setup_agent_module
-    from app.agent.registry import AgentHub  # noqa: F401
+@pytest.mark.asyncio
+async def test_mcp_registry_skips_without_api_key(monkeypatch):
+    """A missing Amap key should skip registration instead of failing startup."""
+    from app.config import settings
 
-    print("\n" + "=" * 60)
-    print("Testing Tool Execution")
-    print("=" * 60)
+    provider = MCPToolProvider()
+    AgentHub.register_provider(provider)
 
-    # Register all tools
-    print("--- Initializing agent module ---")
-    setup_agent_module()
+    monkeypatch.setattr(settings.mcp.amap, "enabled", True)
+    monkeypatch.setattr(settings.mcp, "amap_api_key", None)
 
-    print("--- Registering MCP tools ---")
-    await register_amap_mcp()
+    async def fail_if_called(self, name):
+        raise AssertionError("MCP tools must not load without an Amap API key")
 
-    # Try to find and execute the weather tool
-    print("\n--- Looking for weather tool ---")
-    all_tools = AgentHub.list_tools()
-    weather_tools = [t for t in all_tools if "weather" in t.lower()]
-    print(f"Weather-related tools: {weather_tools}")
+    async def skip_custom_servers():
+        return None
 
-    if weather_tools:
-        tool_name = weather_tools[0]
-        tool = AgentHub.get_tool(tool_name)
-        if tool:
-            print(f"\n--- Executing {tool_name} ---")
-            print(f"Tool description: {tool.description}")
-            print(f"Tool parameters: {tool.parameters}")
+    monkeypatch.setattr(MCPToolProvider, "load_server_tools", fail_if_called)
+    monkeypatch.setattr(
+        mcp_setup,
+        "_register_custom_mcp_servers",
+        skip_custom_servers,
+    )
 
-            result = await tool.execute(city="苏州")
-            print(f"Result: {result}")
-    else:
-        print("No weather tools found!")
+    await mcp_setup.register_mcp_servers()
+
+    assert provider.list_servers() == []
 
 
-async def main():
-    """Run all tests."""
-    print("=" * 60)
-    print("MCP Test Suite")
-    print("=" * 60)
+@pytest.mark.asyncio
+async def test_tool_execution(monkeypatch):
+    """Verify an MCPTool delegates execution through MCPClient."""
+    from app.agent.tools.base import MCPTool
 
-    try:
-        # Test 1: Direct client test
-        await test_mcp_client()
+    captured: dict[str, object] = {}
 
-        # Test 2: Registry test
-        await test_mcp_registry()
+    async def fake_call_tool(self, name, arguments):
+        captured["endpoint"] = self.endpoint
+        captured["name"] = name
+        captured["arguments"] = arguments
+        return ToolResult(success=True, data={"city": "苏州", "weather": "晴"})
 
-        # Test 3: Tool execution test
-        await test_tool_execution()
+    monkeypatch.setattr(MCPClient, "call_tool", fake_call_tool)
 
-    except Exception as e:
-        logger.exception(f"Test failed: {e}")
-        print(f"\nTest failed with error: {e}")
+    tool = MCPTool(
+        name="mcp_amap_maps_weather",
+        description="Query weather",
+        mcp_endpoint="https://mcp.amap.com/mcp?key=test-amap-key",
+        mcp_tool_name="maps_weather",
+        parameters={
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+        },
+    )
 
+    result = await tool.execute(city="苏州")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    assert result.success is True
+    assert result.data == {"city": "苏州", "weather": "晴"}
+    assert captured == {
+        "endpoint": "https://mcp.amap.com/mcp?key=test-amap-key",
+        "name": "maps_weather",
+        "arguments": {"city": "苏州"},
+    }
