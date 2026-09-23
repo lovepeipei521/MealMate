@@ -9,7 +9,7 @@ Provides Search and Research API integration:
 
 import os
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
@@ -44,6 +44,140 @@ class YoucomClient:
             "X-API-Key": self.api_key,
         }
 
+    @staticmethod
+    def _error_detail(response: requests.Response) -> str:
+        """Return a short response body excerpt for troubleshooting."""
+        detail = (response.text or "").strip().replace("\n", " ")
+        return f": {detail[:300]}" if detail else ""
+
+    def _request_error(self, api_name: str, response: requests.Response) -> dict:
+        """Build a consistent, diagnosable API error payload."""
+        detail = self._error_detail(response)
+
+        if response.status_code == 401:
+            reason = "API Key is invalid or expired"
+        elif response.status_code == 403:
+            reason = "API Key has insufficient permissions or the request is forbidden"
+        elif response.status_code == 429:
+            reason = "rate limit exceeded"
+        else:
+            reason = "request failed"
+
+        return {
+            "error": (
+                f"You.com {api_name} {reason} "
+                f"(Status {response.status_code}){detail}"
+            )
+        }
+
+    @staticmethod
+    def _extract_snippet(item: Any) -> str:
+        """Extract a readable snippet from current and legacy response fields."""
+        if not isinstance(item, dict):
+            return ""
+
+        candidates = [item.get("snippets")]
+
+        contents = item.get("contents")
+        if isinstance(contents, dict):
+            candidates.extend(
+                [
+                    contents.get("highlights"),
+                    contents.get("snippets"),
+                ]
+            )
+
+        for candidate in candidates:
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+            if not isinstance(candidate, list):
+                continue
+
+            for value in candidate:
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+                if isinstance(value, dict):
+                    text = (
+                        value.get("text")
+                        or value.get("content")
+                        or value.get("snippet")
+                    )
+                    if isinstance(text, str) and text.strip():
+                        return text.strip()
+
+        description = item.get("description") or item.get("snippet") or ""
+        return description.strip() if isinstance(description, str) else str(description)
+
+    @classmethod
+    def _format_items(cls, items: Any, count: Optional[int] = None) -> list[dict]:
+        """Normalize You.com result items and remove duplicate URLs."""
+        if isinstance(items, dict):
+            flattened = []
+            for key in ("web", "news"):
+                value = items.get(key)
+                if isinstance(value, list):
+                    flattened.extend(value)
+            items = flattened
+
+        if not isinstance(items, list):
+            return []
+
+        formatted = []
+        seen = set()
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            title = item.get("title") or "Unknown source"
+            url = item.get("url") or ""
+            snippet = cls._extract_snippet(item)
+            key = url or f"{title}:{snippet}"
+
+            if key in seen:
+                continue
+            seen.add(key)
+
+            formatted.append(
+                {
+                    "title": title,
+                    "url": url,
+                    "snippet": snippet,
+                }
+            )
+
+            if count is not None and len(formatted) >= count:
+                break
+
+        return formatted
+
+    @staticmethod
+    def _extract_search_items(data: Any) -> list:
+        """Support current nested results and the legacy top-level list format."""
+        if not isinstance(data, dict):
+            return []
+
+        raw_results = data.get("results")
+
+        if isinstance(raw_results, dict):
+            items = []
+            for key in ("web", "news"):
+                value = raw_results.get(key)
+                if isinstance(value, list):
+                    items.extend(value)
+            return items
+
+        if isinstance(raw_results, list):
+            return raw_results
+
+        # Tolerate providers that expose web/news directly at the top level.
+        items = []
+        for key in ("web", "news"):
+            value = data.get(key)
+            if isinstance(value, list):
+                items.extend(value)
+        return items
+
     def search(self, query: str, count: int = 10) -> dict:
         """
         Perform web search via You.com Search API.
@@ -54,7 +188,7 @@ class YoucomClient:
 
         Returns:
             Dict with keys:
-            - results: list of dicts with title, url, snippets
+            - results: list of dicts with title, url, snippet
             - error: error message if failed
         """
         if not self.api_key:
@@ -63,8 +197,9 @@ class YoucomClient:
         if not query or not query.strip():
             return {"error": "Search query cannot be empty"}
 
+        count = min(max(count, 1), 20)
         headers = self._get_headers()
-        payload = {"query": query, "count": min(max(count, 1), 20)}
+        payload = {"query": query, "count": count}
 
         try:
             response = self._session.post(
@@ -76,43 +211,15 @@ class YoucomClient:
         except Exception as e:
             return {"error": f"You.com Search request failed: {e}"}
 
-        if response.status_code == 429:
-            return {"error": "You.com Search rate limit exceeded (429)"}
-        if response.status_code == 401:
-            return {"error": "You.com API Key is invalid or expired"}
-        if response.status_code == 403:
-            return {"error": "You.com API Key has insufficient permissions"}
         if response.status_code != 200:
-            return {"error": f"You.com Search request failed (Status {response.status_code})"}
+            return self._request_error("Search", response)
 
         try:
             data = response.json()
         except Exception:
             return {"error": "You.com Search returned non-JSON response"}
 
-        results = data.get("results", [])
-        if not results:
-            return {"results": []}
-
-        formatted = []
-        for item in results[:count]:
-            title = item.get("title", "")
-            url = item.get("url", "")
-            snippets = item.get("snippets", [])
-            snippet = (
-                snippets[0]
-                if isinstance(snippets, list) and snippets
-                else item.get("description", "")
-            )
-            formatted.append(
-                {
-                    "title": title,
-                    "url": url,
-                    "snippet": snippet,
-                }
-            )
-
-        return {"results": formatted}
+        return {"results": self._format_items(self._extract_search_items(data), count)}
 
     def research(self, query: str, research_effort: str = "standard") -> dict:
         """
@@ -151,54 +258,47 @@ class YoucomClient:
         except Exception as e:
             return {"error": f"You.com Research request failed: {e}"}
 
-        if response.status_code == 429:
-            return {"error": "You.com Research rate limit exceeded (429)"}
-        if response.status_code == 401:
-            return {"error": "You.com API Key is invalid or expired"}
-        if response.status_code == 403:
-            return {"error": "You.com API Key has insufficient permissions"}
         if response.status_code != 200:
-            return {"error": f"You.com Research request failed (Status {response.status_code})"}
+            return self._request_error("Research", response)
 
         try:
             data = response.json()
         except Exception:
             return {"error": "You.com Research returned non-JSON response"}
 
-        content = data.get("content", "")
-        sources = data.get("sources", [])
+        if not isinstance(data, dict):
+            return {"error": "You.com Research returned an unexpected response"}
 
-        formatted_sources = []
-        for source in sources:
-            snippets = source.get("snippets", [])
-            snippet = (
-                snippets[0]
-                if isinstance(snippets, list) and snippets
-                else ""
-            )
-            formatted_sources.append(
-                {
-                    "title": source.get("title", "Unknown source"),
-                    "url": source.get("url", ""),
-                    "snippet": snippet,
-                }
-            )
+        output = data.get("output")
+        if not isinstance(output, dict):
+            output = {}
 
+        content = output.get("content") or data.get("content") or ""
+        if not isinstance(content, str):
+            content = str(content)
+
+        sources = output.get("sources") or data.get("sources") or []
         return {
             "content": content,
-            "sources": formatted_sources,
+            "sources": self._format_items(sources),
         }
 
 
 # Singleton instance
 _youcom_client: Optional[YoucomClient] = None
+youcom_client: Optional[YoucomClient] = None
 
 
 def get_youcom_client(api_key: Optional[str] = None) -> YoucomClient:
     """Get or create the You.com client singleton."""
-    global _youcom_client
-    if _youcom_client is None:
+    global _youcom_client, youcom_client
+
+    if _youcom_client is None or (
+        api_key and _youcom_client.api_key != api_key
+    ):
         _youcom_client = YoucomClient(api_key=api_key)
+        youcom_client = _youcom_client
+
     return _youcom_client
 
 

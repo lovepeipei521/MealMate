@@ -27,6 +27,11 @@ from app.llm.provider import LLMInvoker
 
 logger = logging.getLogger(__name__)
 
+NETWORK_TOOL_LABELS = {
+    "web_search": "联网搜索",
+    "deep_research": "深度研究",
+}
+
 
 class BaseAgent(ABC):
     """
@@ -153,6 +158,31 @@ class BaseAgent(ABC):
                             type=AgentChunkType.TOOL_RESULT,
                             data=result_info,
                         )
+
+                    failure_message = self._network_tool_failure_message(tool_results)
+                    if failure_message:
+                        logger.warning(
+                            "Terminal network tool failure for agent %s: %s",
+                            self.name,
+                            failure_message,
+                        )
+                        yield AgentChunk(
+                            type=AgentChunkType.CONTENT,
+                            data=failure_message,
+                        )
+                        yield AgentChunk(
+                            type=AgentChunkType.TRACE,
+                            data=TraceStep(
+                                iteration=iteration,
+                                action="finish",
+                                content=failure_message,
+                            ),
+                        )
+                        yield AgentChunk(
+                            type=AgentChunkType.DONE,
+                            data={"iterations": iteration + 1},
+                        )
+                        return
 
                     # 将 Tool 调用和结果加入消息历史
                     messages = self._append_tool_messages(
@@ -338,6 +368,33 @@ class BaseAgent(ABC):
                                     data=result_info,
                                 )
 
+                            failure_message = self._network_tool_failure_message(
+                                tool_results
+                            )
+                            if failure_message:
+                                logger.warning(
+                                    "Terminal network tool failure for agent %s: %s",
+                                    self.name,
+                                    failure_message,
+                                )
+                                yield AgentChunk(
+                                    type=AgentChunkType.CONTENT,
+                                    data=failure_message,
+                                )
+                                yield AgentChunk(
+                                    type=AgentChunkType.TRACE,
+                                    data=TraceStep(
+                                        iteration=iteration,
+                                        action="finish",
+                                        content=failure_message,
+                                    ),
+                                )
+                                yield AgentChunk(
+                                    type=AgentChunkType.DONE,
+                                    data={"iterations": iteration + 1},
+                                )
+                                return
+
                             # 构建消息继续对话
                             messages = self._append_tool_messages_streaming(
                                 messages, collected_content, tool_calls, tool_results
@@ -385,6 +442,20 @@ class BaseAgent(ABC):
                 break
 
     # ==================== 辅助方法 ====================
+
+    @staticmethod
+    def _network_tool_failure_message(
+        tool_results: list[ToolResultInfo],
+    ) -> str | None:
+        """Return a user-facing terminal error for failed online tools."""
+        for result in tool_results:
+            if result.success or result.name not in NETWORK_TOOL_LABELS:
+                continue
+
+            label = NETWORK_TOOL_LABELS[result.name]
+            return f"{label}失败，当前无法获取互联网结果，请稍后重试。"
+
+        return None
 
     async def _execute_tool_call(
         self,
