@@ -50,14 +50,29 @@ class EvaluationConfig:
     # Alert thresholds
     alert_thresholds: AlertThresholds = field(default_factory=AlertThresholds)
 
-    def should_evaluate(self) -> bool:
-        """Check if evaluation should be performed based on sampling."""
-        if not self.enabled:
+    def should_evaluate(
+        self,
+        enabled: Optional[bool] = None,
+        sample_rate: Optional[float] = None,
+    ) -> bool:
+        """Check whether evaluation should run with optional per-user overrides.
+
+        The global config remains the master switch. A user-level override can
+        disable evaluation or lower the sampling rate, but cannot force it on
+        when ``self.enabled`` is false.
+        """
+        effective_enabled = self.enabled if enabled is None else self.enabled and enabled
+        effective_sample_rate = (
+            self.sample_rate if sample_rate is None else sample_rate
+        )
+
+        if not effective_enabled or effective_sample_rate <= 0.0:
             return False
-        if self.sample_rate >= 1.0:
+        if effective_sample_rate >= 1.0:
             return True
+
         import random
-        return random.random() < self.sample_rate
+        return random.random() < effective_sample_rate
 
 
 # Default configuration

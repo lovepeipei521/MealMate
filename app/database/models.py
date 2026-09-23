@@ -10,9 +10,11 @@ from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Enum as SQLEnum,
+    Float,
     ForeignKey,
     Index,
     JSON,
@@ -325,6 +327,32 @@ class RAGEvaluationModel(Base):
             "evaluation_duration_ms": self.evaluation_duration_ms,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "evaluated_at": self.evaluated_at.isoformat() if self.evaluated_at else None,
+        }
+
+
+class EvaluationUserSettingModel(Base):
+    """Per-user runtime preferences for automatic RAG evaluation."""
+
+    __tablename__ = "evaluation_user_settings"
+
+    user_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sample_rate: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    def to_dict(self) -> dict:
+        """Serialize user evaluation settings for API responses."""
+        return {
+            "user_id": self.user_id,
+            "enabled": self.enabled,
+            "sample_rate": self.sample_rate,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 

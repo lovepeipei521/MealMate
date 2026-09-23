@@ -8,11 +8,20 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.database.evaluation_repository import evaluation_repository
+from app.services.evaluation_service import evaluation_service
 
 router = APIRouter(prefix="/evaluation", tags=["Evaluation"])
+
+
+class EvaluationSettingsUpdate(BaseModel):
+    """User-level overrides for automatic RAG evaluation."""
+
+    enabled: Optional[bool] = None
+    sample_rate: Optional[float] = Field(None, ge=0.0, le=1.0)
 
 
 @router.get("/statistics")
@@ -72,9 +81,11 @@ async def get_conversation_evaluations(
     Returns a list of evaluation records for the conversation,
     including metrics and status for each evaluated message.
     """
+    user_id = getattr(request.state, "user_id", None)
     evaluations = await evaluation_repository.get_by_conversation(
         conversation_id=conversation_id,
         limit=limit,
+        user_id=user_id,
     )
 
     return {
@@ -174,6 +185,36 @@ async def evaluation_health():
     }
 
 
+@router.get("/settings")
+async def get_evaluation_settings(request: Request):
+    """Get the current user's automatic evaluation settings."""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="需要登录")
+
+    return await evaluation_service.get_user_settings(str(user_id))
+
+
+@router.patch("/settings")
+async def update_evaluation_settings(
+    request: Request,
+    payload: EvaluationSettingsUpdate,
+):
+    """Update user-level settings without mutating the global config."""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="需要登录")
+
+    try:
+        return await evaluation_service.update_user_settings(
+            user_id=str(user_id),
+            enabled=payload.enabled,
+            sample_rate=payload.sample_rate,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/{evaluation_id}")
 async def get_evaluation_detail(
     request: Request,
@@ -188,7 +229,10 @@ async def get_evaluation_detail(
     - All metric scores
     - Evaluation status and timing
     """
-    evaluation = await evaluation_repository.get_by_id(evaluation_id)
+    user_id = getattr(request.state, "user_id", None)
+    evaluation = await evaluation_repository.get_by_id(
+        evaluation_id, user_id=user_id
+    )
 
     if not evaluation:
         raise HTTPException(status_code=404, detail="Evaluation not found")

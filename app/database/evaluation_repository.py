@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models import RAGEvaluationModel
+from app.database.models import EvaluationUserSettingModel, RAGEvaluationModel
 from app.database.session import get_session_context
 
 logger = logging.getLogger(__name__)
@@ -129,12 +129,67 @@ class EvaluationRepository:
             )
             return True
 
-    async def get_by_id(self, evaluation_id: str) -> Optional[Dict[str, Any]]:
-        """Get a single evaluation by ID."""
+    async def get_user_settings(
+        self, user_id: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Get persisted automatic-evaluation settings for one user."""
+        if not user_id:
+            return None
+
         async with get_session_context() as session:
-            stmt = select(RAGEvaluationModel).where(
-                RAGEvaluationModel.id == uuid.UUID(evaluation_id)
+            stmt = select(EvaluationUserSettingModel).where(
+                EvaluationUserSettingModel.user_id == str(user_id)
             )
+            result = await session.execute(stmt)
+            setting = result.scalar_one_or_none()
+            return setting.to_dict() if setting else None
+
+    async def upsert_user_settings(
+        self,
+        user_id: str,
+        enabled: bool,
+        sample_rate: float,
+    ) -> Dict[str, Any]:
+        """Create or update automatic-evaluation settings for one user."""
+        if not user_id:
+            raise ValueError("user_id is required")
+        if not 0.0 <= sample_rate <= 1.0:
+            raise ValueError("sample_rate must be between 0.0 and 1.0")
+
+        async with get_session_context() as session:
+            stmt = select(EvaluationUserSettingModel).where(
+                EvaluationUserSettingModel.user_id == str(user_id)
+            )
+            result = await session.execute(stmt)
+            setting = result.scalar_one_or_none()
+
+            if setting is None:
+                setting = EvaluationUserSettingModel(
+                    user_id=str(user_id),
+                    enabled=enabled,
+                    sample_rate=sample_rate,
+                )
+                session.add(setting)
+            else:
+                setting.enabled = enabled
+                setting.sample_rate = sample_rate
+
+            await session.commit()
+            await session.refresh(setting)
+            return setting.to_dict()
+
+    async def get_by_id(
+        self,
+        evaluation_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Get a single evaluation by ID, optionally scoped to its owner."""
+        conditions = [RAGEvaluationModel.id == uuid.UUID(evaluation_id)]
+        if user_id:
+            conditions.append(RAGEvaluationModel.user_id == str(user_id))
+
+        async with get_session_context() as session:
+            stmt = select(RAGEvaluationModel).where(and_(*conditions))
             result = await session.execute(stmt)
             evaluation = result.scalar_one_or_none()
 
@@ -143,13 +198,22 @@ class EvaluationRepository:
             return None
 
     async def get_by_conversation(
-        self, conversation_id: str, limit: int = 100
+        self,
+        conversation_id: str,
+        limit: int = 100,
+        user_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Get all evaluations for a conversation."""
+        """Get all evaluations for a conversation, scoped to its owner."""
+        conditions = [
+            RAGEvaluationModel.conversation_id == uuid.UUID(conversation_id)
+        ]
+        if user_id:
+            conditions.append(RAGEvaluationModel.user_id == str(user_id))
+
         async with get_session_context() as session:
             stmt = (
                 select(RAGEvaluationModel)
-                .where(RAGEvaluationModel.conversation_id == uuid.UUID(conversation_id))
+                .where(and_(*conditions))
                 .order_by(RAGEvaluationModel.created_at.desc())
                 .limit(limit)
             )

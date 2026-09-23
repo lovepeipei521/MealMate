@@ -274,6 +274,63 @@ class EvaluationService:
             logger.error("Evaluation failed: %s", e, exc_info=True)
             raise
 
+    def _build_user_settings_response(
+        self, saved: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Build the effective per-user evaluation settings response."""
+        configured_enabled = bool(self.config.enabled)
+        configured_sample_rate = float(self.config.sample_rate)
+        user_enabled = (
+            bool(saved["enabled"]) if saved is not None else configured_enabled
+        )
+        user_sample_rate = (
+            float(saved["sample_rate"])
+            if saved is not None
+            else configured_sample_rate
+        )
+
+        return {
+            "enabled": configured_enabled and user_enabled,
+            "sample_rate": user_sample_rate,
+            "user_enabled": user_enabled,
+            "user_sample_rate": user_sample_rate,
+            "configured_enabled": configured_enabled,
+            "configured_sample_rate": configured_sample_rate,
+            "is_custom": saved is not None,
+            "async_mode": bool(self.config.async_mode),
+        }
+
+    async def get_user_settings(self, user_id: str) -> Dict[str, Any]:
+        """Return effective automatic-evaluation settings for a user."""
+        saved = await evaluation_repository.get_user_settings(user_id)
+        return self._build_user_settings_response(saved)
+
+    async def update_user_settings(
+        self,
+        user_id: str,
+        enabled: Optional[bool] = None,
+        sample_rate: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Persist user overrides without mutating the global config."""
+        saved = await evaluation_repository.get_user_settings(user_id)
+        current = self._build_user_settings_response(saved)
+
+        next_enabled = (
+            bool(current["user_enabled"]) if enabled is None else bool(enabled)
+        )
+        next_sample_rate = (
+            float(current["user_sample_rate"])
+            if sample_rate is None
+            else float(sample_rate)
+        )
+
+        updated = await evaluation_repository.upsert_user_settings(
+            user_id=user_id,
+            enabled=next_enabled,
+            sample_rate=next_sample_rate,
+        )
+        return self._build_user_settings_response(updated)
+
     async def schedule_evaluation(
         self,
         message_id: str,
@@ -283,6 +340,8 @@ class EvaluationService:
         response: str,
         rewritten_query: Optional[str] = None,
         user_id: Optional[str] = None,
+        enabled_override: Optional[bool] = None,
+        sample_rate_override: Optional[float] = None,
     ):
         """
         Schedule an asynchronous evaluation for a RAG response.
@@ -298,14 +357,24 @@ class EvaluationService:
             response: Generated response
             rewritten_query: Rewritten query (if any)
             user_id: User ID (if available)
+            enabled_override: Optional per-user enable/disable override
+            sample_rate_override: Optional per-user sampling override
         """
-        if not self.config.enabled:
-            logger.debug("Evaluation disabled, skipping")
-            return
+        saved_settings = (
+            await evaluation_repository.get_user_settings(user_id)
+            if user_id
+            else None
+        )
+        if enabled_override is None and saved_settings is not None:
+            enabled_override = bool(saved_settings["enabled"])
+        if sample_rate_override is None and saved_settings is not None:
+            sample_rate_override = float(saved_settings["sample_rate"])
 
-        # Check sampling rate
-        if not self.config.should_evaluate():
-            logger.debug("Evaluation skipped due to sampling")
+        if not self.config.should_evaluate(
+            enabled=enabled_override,
+            sample_rate=sample_rate_override,
+        ):
+            logger.debug("Evaluation disabled or skipped due to sampling")
             return
 
         # Skip if no context (non-RAG response)

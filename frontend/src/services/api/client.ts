@@ -132,6 +132,28 @@ export async function apiPost<T, D = unknown>(
 }
 
 /**
+ * Make a PATCH request
+ */
+export async function apiPatch<T, D = unknown>(
+  endpoint: string,
+  data: D,
+  token?: string
+): Promise<T> {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'PATCH',
+    headers: createJsonHeaders(token),
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const msg = await parseErrorResponse(response);
+    throw new Error(msg || `HTTP error! status: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
  * Make a PUT request
  */
 export async function apiPut<T, D = unknown>(

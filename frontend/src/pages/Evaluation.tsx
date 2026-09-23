@@ -14,11 +14,11 @@ import {
   RefreshCcw,
   Target,
   TrendingUp,
-  XCircle,
   ChevronDown,
   ChevronUp,
   ExternalLink,
   Zap,
+  XCircle,
 } from 'lucide-react';
 import {
   XAxis,
@@ -38,6 +38,8 @@ import {
   getEvaluationTrends,
   getEvaluationAlerts,
   getEvaluationHealth,
+  getEvaluationSettings,
+  updateEvaluationSettings,
 } from '../services/api/evaluation';
 import type {
   EvaluationStatistics,
@@ -45,6 +47,7 @@ import type {
   AlertsResponse,
   EvaluationHealth,
   EvaluationAlert,
+  EvaluationSettings,
 } from '../types/evaluation';
 
 // Metric display names
@@ -477,35 +480,75 @@ function AlertList({ data, loading }: AlertListProps) {
 }
 
 /**
- * Health status badge
+ * Per-user automatic evaluation controls
  */
-function HealthBadge({ health }: { health: EvaluationHealth | null }) {
-  if (!health) return null;
+interface EvaluationSettingsControlProps {
+  settings: EvaluationSettings | null;
+  saving: boolean;
+  onChange: (patch: { enabled?: boolean; sample_rate?: number }) => void;
+}
+
+function EvaluationSettingsControl({
+  settings,
+  saving,
+  onChange,
+}: EvaluationSettingsControlProps) {
+  if (!settings) return null;
+
+  const globallyDisabled = !settings.configured_enabled;
+  const controlsDisabled = globallyDisabled || saving;
+  const rateOptions = Array.from(
+    new Set([0.1, 0.25, 0.5, 1, settings.user_sample_rate]),
+  ).sort((a, b) => a - b);
 
   return (
-    <div className="flex items-center gap-2 text-xs">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/70 px-3 py-2">
+      <label className="flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-300">
+        <input
+          type="checkbox"
+          checked={!globallyDisabled && settings.user_enabled}
+          disabled={controlsDisabled}
+          onChange={(event) => onChange({ enabled: event.target.checked })}
+          className="h-4 w-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500 disabled:cursor-not-allowed"
+        />
+        自动评估
+      </label>
       <span
         className={`inline-flex items-center gap-1 px-2 py-1 rounded-full ${
-          health.enabled
+          settings.enabled
             ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
             : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
         }`}
       >
-        {health.enabled ? (
+        {settings.enabled ? (
           <>
             <CheckCircle2 className="w-3 h-3" />
-            评估已启用
+            已启用
           </>
         ) : (
           <>
             <XCircle className="w-3 h-3" />
-            评估已禁用
+            已禁用
           </>
         )}
       </span>
-      {health.enabled && (
-        <span className="text-gray-500">
-          采样率: {(health.sample_rate * 100).toFixed(0)}%
+      <select
+        value={settings.user_sample_rate}
+        disabled={controlsDisabled || !settings.user_enabled}
+        onChange={(event) => onChange({ sample_rate: Number(event.target.value) })}
+        className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-700 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
+        aria-label="评估采样率"
+      >
+        {rateOptions.map((rate) => (
+          <option key={rate} value={rate}>
+            {Math.round(rate * 100)}%
+          </option>
+        ))}
+      </select>
+      {saving && <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500" />}
+      {globallyDisabled && (
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          全局配置已关闭
         </span>
       )}
     </div>
@@ -523,6 +566,8 @@ export default function EvaluationPage() {
   const [trends, setTrends] = useState<TrendsResponse | null>(null);
   const [alerts, setAlerts] = useState<AlertsResponse | null>(null);
   const [health, setHealth] = useState<EvaluationHealth | null>(null);
+  const [settings, setSettings] = useState<EvaluationSettings | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [trendsLoading, setTrendsLoading] = useState(false);
@@ -540,17 +585,19 @@ export default function EvaluationPage() {
     setError(null);
 
     try {
-      const [statsData, trendsData, alertsData, healthData] = await Promise.all([
+      const [statsData, trendsData, alertsData, healthData, settingsData] = await Promise.all([
         getEvaluationStatistics(token),
         getEvaluationTrends(token, days, granularity),
         getEvaluationAlerts(token, 20),
         getEvaluationHealth(token),
+        getEvaluationSettings(token),
       ]);
 
       setStats(statsData);
       setTrends(trendsData);
       setAlerts(alertsData);
       setHealth(healthData);
+      setSettings(settingsData);
     } catch (err) {
       console.error('Failed to load evaluation data:', err);
       setError(err instanceof Error ? err.message : '加载数据失败');
@@ -558,6 +605,25 @@ export default function EvaluationPage() {
       setLoading(false);
     }
   }, [token, days, granularity]);
+
+  const saveSettings = useCallback(
+    async (patch: { enabled?: boolean; sample_rate?: number }) => {
+      if (!token) return;
+
+      setSettingsSaving(true);
+      setError(null);
+      try {
+        const updated = await updateEvaluationSettings(token, patch);
+        setSettings(updated);
+      } catch (err) {
+        console.error('Failed to update evaluation settings:', err);
+        setError(err instanceof Error ? err.message : '保存评估设置失败');
+      } finally {
+        setSettingsSaving(false);
+      }
+    },
+    [token],
+  );
 
   // Load trends when filters change
   const loadTrends = useCallback(async () => {
@@ -625,7 +691,11 @@ export default function EvaluationPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <HealthBadge health={health} />
+            <EvaluationSettingsControl
+              settings={settings}
+              saving={settingsSaving}
+              onChange={saveSettings}
+            />
             <button
               onClick={loadData}
               className="p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors"

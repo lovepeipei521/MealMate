@@ -3,12 +3,13 @@
  */
 
 import { API_BASE } from '../../constants';
-import { createAuthHeaders } from './client';
+import { apiGet, apiPatch, createAuthHeaders } from './client';
 import type {
   EvaluationStatistics,
   TrendsResponse,
   AlertsResponse,
   EvaluationHealth,
+  EvaluationSettings,
   EvaluationDetail,
   ConversationEvaluationsResponse,
 } from '../../types/evaluation';
@@ -98,6 +99,25 @@ export async function getEvaluationHealth(token: string): Promise<EvaluationHeal
   }
 
   return response.json();
+}
+
+/**
+ * Get the current user's automatic evaluation settings
+ */
+export async function getEvaluationSettings(
+  token: string
+): Promise<EvaluationSettings> {
+  return apiGet<EvaluationSettings>('/evaluation/settings', token);
+}
+
+/**
+ * Update the current user's automatic evaluation settings
+ */
+export async function updateEvaluationSettings(
+  token: string,
+  data: { enabled?: boolean; sample_rate?: number }
+): Promise<EvaluationSettings> {
+  return apiPatch<EvaluationSettings>('/evaluation/settings', data, token);
 }
 
 /**

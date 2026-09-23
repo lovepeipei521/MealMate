@@ -80,6 +80,18 @@ export interface EvaluationHealth {
   alert_thresholds: Record<string, number>;
 }
 
+// Per-user automatic evaluation settings
+export interface EvaluationSettings {
+  enabled: boolean;
+  sample_rate: number;
+  user_enabled: boolean;
+  user_sample_rate: number;
+  configured_enabled: boolean;
+  configured_sample_rate: number;
+  is_custom: boolean;
+  async_mode: boolean;
+}
+
 // Single evaluation detail
 export interface EvaluationDetail {
   id: string;
