@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./docs/image.png" alt="MealMate Logo" width="512" />
+<img src="./docs/mealmate-brand.svg" alt="MealMate Logo" width="512" />
 
 **智能烹饪与饮食管理助手 · 你的个性化饮食英雄**
 

@@ -664,7 +664,7 @@ docs/
 ├── PROJECT_STRUCTURE.md  # 项目结构文档（本文档）
 ├── README_EN.md          # 英文说明文档
 ├── SECURITY.md           # 安全策略文档
-└── image.png             # 项目 Logo
+└── mealmate-brand.svg    # 项目 Logo
 ```
 
 ---

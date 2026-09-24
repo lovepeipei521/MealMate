@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 190" role="img" aria-labelledby="title desc">
+  <title id="title">MealMate</title>
+  <desc id="desc">MealMate Kitchen Notes logo</desc>
+  <rect x="25" y="31" width="122" height="122" rx="35" fill="#f5c94a"/>
+  <rect x="16" y="22" width="122" height="122" rx="35" fill="#ed6550"/>
+  <g fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M52 49v34a17 17 0 0 0 34 0V49"/>
+    <path d="M69 49v76"/>
+    <path d="M106 49v76"/>
+    <path d="M106 49c11 7 15 18 15 32h-15"/>
+  </g>
+  <text x="184" y="105" fill="#17382e" font-family="Arial, Helvetica, sans-serif" font-size="66" font-weight="800" letter-spacing="-3">MealMate</text>
+  <text x="188" y="139" fill="#7d9187" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="5">KITCHEN NOTES</text>
+</svg>

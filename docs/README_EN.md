@@ -1,5 +1,5 @@
 <div align="center">
-<img src="./image.png" alt="MealMate Logo" width="512" />
+<img src="./mealmate-brand.svg" alt="MealMate Logo" width="512" />
 
 **Intelligent Cooking & Diet Management Assistant · Your Personalized Diet Hero**
 

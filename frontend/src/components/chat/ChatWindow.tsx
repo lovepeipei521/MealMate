@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { BookOpen, Lightbulb, UtensilsCrossed } from 'lucide-react';
 import type { Message } from '../../types';
 import { MessageBubble } from './MessageBubble';
+import { MealMateBrandHero } from '../common/MealMateBrandHero';
 
 export interface ChatWindowProps {
     messages: Message[];
@@ -105,15 +106,7 @@ function EmptyState({
     return (
         <div className="flex flex-col items-center justify-center h-full w-full text-gray-500 dark:text-gray-400 animate-in fade-in duration-500 overflow-x-hidden px-4 box-border">
             <section className="empty-state-hero relative flex-1 flex flex-col items-center justify-center overflow-hidden">
-                <div className="relative group w-full px-4">
-                    <div className="w-100 h-48 max-w-5xl mx-auto flex items-center justify-center">
-                        <img
-                            src="/image.png"
-                            alt="MealMate Logo"
-                            className="w-full max-w-4xl object-contain transition-all duration-500 group-hover:scale-105"
-                        />
-                    </div>
-                </div>
+                <MealMateBrandHero />
             </section>
 
             {/* Feature Cards */}
