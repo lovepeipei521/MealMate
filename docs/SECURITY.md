@@ -467,7 +467,8 @@ The following environment variables are automatically redacted in logs:
 - `FAST_LLM_API_KEY`
 - `VISION_API_KEY`
 - `RERANKER_API_KEY`
-- `WEB_SEARCH_API_KEY`
+- `YOUCOM_API_KEY` (Web Search)
+- `TAVILY_API_KEY` (Deep Research)
 - `DATABASE_PASSWORD`
 - `REDIS_PASSWORD`
 - `MILVUS_PASSWORD`

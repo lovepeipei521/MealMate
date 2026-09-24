@@ -68,7 +68,8 @@ MealMate 面向厨房新手、健身/减脂/控糖人群、健康饮食倡导者
 - **内置工具**：
   - 饮食工具：计划管理、饮食记录、营养分析
   - 知识库检索：调用内置 RAG 检索并返回可引用来源
-  - Web 搜索：集成 Tavily 搜索引擎，联网查询实时信息
+  - Web 搜索：集成 You.com Search API，联网查询实时信息
+  - 深度研究：集成 Tavily Research API，返回报告和引用来源
   - AI 图片生成：基于 DALL-E 3 等模型生成图片，自动上传到 imgbb 持久化
   - 计算器：数学计算
   - 日期时间：获取当前时间、时区转换
@@ -237,8 +238,9 @@ REDIS_PASSWORD=your_redis_password
 MILVUS_USER=root
 MILVUS_PASSWORD=your_milvus_password
 
-# ==================== Web 搜索 ====================
-WEB_SEARCH_API_KEY=your_tavily_api_key
+# ==================== Web 搜索与深度研究 ====================
+YOUCOM_API_KEY=ydc-your_youcom_api_key
+TAVILY_API_KEY=tvly-your_tavily_api_key
 
 # ==================== MCP 集成 ====================
 # 高德地图 MCP 服务 API Key

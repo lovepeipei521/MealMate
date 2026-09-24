@@ -200,15 +200,21 @@ web_search:
   # api_key: Loaded from .env (YOUCOM_API_KEY)
 
 # =============================================================================
-# 7b. Deep Research Configuration (You.com)
+# 7b. Deep Research Configuration (Tavily Research)
 # =============================================================================
-# Configuration for You.com Research API - deep research capability.
+# Configuration for Tavily Research API - deep research capability.
+# Provider can be set to "tavily" or "youcom".
 # =============================================================================
 
 deep_research:
   enabled: true
+  provider: "tavily"
+  # Optional Tavily model override: mini, pro, auto
+  model: ""
   # Research depth: lite, standard, deep, exhaustive
   research_effort: "standard"
+  timeout_seconds: 300
+  poll_interval_seconds: 2
 
 # =============================================================================
 # 8. Image Generation Configuration (OpenAI DALL-E)

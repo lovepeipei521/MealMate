@@ -21,8 +21,16 @@ class WebSearchConfig(BaseModel):
 
 class DeepResearchConfig(BaseModel):
     """
-    Configuration for deep research functionality using You.com Research API.
+    Configuration for deep research functionality.
+
+    Tavily Research is the default provider. You.com Research remains available
+    as a backward-compatible fallback.
     """
 
     enabled: bool = True
+    provider: str = "tavily"  # tavily, youcom
+    model: Optional[str] = None  # Tavily override: mini, pro, auto
     research_effort: str = "standard"  # lite, standard, deep, exhaustive
+    timeout_seconds: int = 300
+    poll_interval_seconds: float = 2.0
+    api_key: Optional[str] = None

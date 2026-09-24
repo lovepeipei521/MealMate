@@ -2,12 +2,12 @@
 """
 深度研究 Tool
 
-使用 You.com Research API 进行深度研究，返回结构化报告和引用来源。
+默认使用 Tavily Research API，也保留 You.com Research API 兼容支持。
+返回结构化报告和引用来源。
 """
 
 import asyncio
 import logging
-from typing import Optional
 
 from app.agent.tools.base import BaseTool
 from app.agent.types import ToolResult
@@ -19,7 +19,7 @@ class DeepResearchTool(BaseTool):
     """
     深度研究 Tool。
 
-    使用 You.com Research API 进行深度研究，适合需要深入分析复杂问题。
+    默认使用 Tavily Research API，适合需要深入分析复杂问题。
     支持四种研究深度：lite, standard, deep, exhaustive。
     """
 
@@ -50,23 +50,64 @@ class DeepResearchTool(BaseTool):
             return ToolResult(success=False, error="Query is required")
 
         try:
-            from app.integrations.youcom import get_youcom_client
             from app.config import settings
 
-            api_key = settings.web_search.api_key
-            if not api_key:
+            config = settings.deep_research
+            if not config.enabled:
                 return ToolResult(
                     success=False,
-                    error="Deep research API key is not configured. Set YOUCOM_API_KEY in .env",
+                    error="Deep research is disabled in config.yml",
                 )
 
-            client = get_youcom_client(api_key=api_key)
+            provider = str(config.provider or "tavily").strip().lower()
+            effort = str(research_effort or config.research_effort or "standard").strip().lower()
 
-            # Run blocking API call in thread pool
-            def do_research():
-                return client.research(query=query, research_effort=research_effort)
+            if provider == "tavily":
+                if not config.api_key:
+                    return ToolResult(
+                        success=False,
+                        error="Deep research API key is not configured. Set TAVILY_API_KEY in .env",
+                    )
 
-            response = await asyncio.to_thread(do_research)
+                from app.integrations.tavily import get_tavily_research_client
+
+                client = get_tavily_research_client(
+                    api_key=config.api_key,
+                    model=config.model,
+                    timeout_seconds=config.timeout_seconds,
+                    poll_interval_seconds=config.poll_interval_seconds,
+                )
+            elif provider == "youcom":
+                if not config.api_key:
+                    return ToolResult(
+                        success=False,
+                        error="Deep research API key is not configured. Set YOUCOM_API_KEY in .env",
+                    )
+
+                from app.integrations.youcom import get_youcom_client
+
+                client = get_youcom_client(api_key=config.api_key)
+            else:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"Unsupported deep research provider: {provider}. "
+                        "Use 'tavily' or 'youcom'."
+                    ),
+                )
+
+            logger.info(
+                "Deep research request: provider=%s effort=%s query=%s",
+                provider,
+                effort,
+                query[:120],
+            )
+
+            response = await asyncio.to_thread(
+                client.research,
+                query=query,
+                research_effort=effort,
+            )
 
             if "error" in response:
                 return ToolResult(success=False, error=response["error"])
@@ -78,20 +119,22 @@ class DeepResearchTool(BaseTool):
                 success=True,
                 data={
                     "query": query,
-                    "research_effort": research_effort,
+                    "research_effort": effort,
+                    "provider": provider,
                     "content": content,
                     "sources": sources,
                 },
             )
 
-        except ImportError:
+        except ImportError as exc:
+            logger.exception("Deep research integration import failed")
             return ToolResult(
                 success=False,
-                error="app.integrations.youcom is not available",
+                error=f"Deep research integration is not available: {exc}",
             )
-        except Exception as e:
-            logger.exception(f"Deep research failed: {e}")
-            return ToolResult(success=False, error=f"Deep research failed: {str(e)}")
+        except Exception as exc:
+            logger.exception("Deep research failed: %s", exc)
+            return ToolResult(success=False, error=f"Deep research failed: {exc}")
 
 
 __all__ = ["DeepResearchTool"]

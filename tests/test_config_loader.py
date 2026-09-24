@@ -60,3 +60,35 @@ def test_load_llm_config_keeps_llm_vision_fallback(monkeypatch):
 
     assert config.vision.model_names == ["fallback-vision-model"]
     assert config.vision.base_url == "https://fallback.example/v1"
+
+
+def test_load_deep_research_config_defaults_to_tavily(monkeypatch):
+    monkeypatch.setattr(
+        config_loader,
+        "_load_config_data",
+        lambda: {"deep_research": {"enabled": True}},
+    )
+    monkeypatch.delenv("DEEP_RESEARCH_PROVIDER", raising=False)
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
+    monkeypatch.setenv("YOUCOM_API_KEY", "ydc-test-key")
+
+    config = config_loader.load_deep_research_config()
+
+    assert config.provider == "tavily"
+    assert config.api_key == "tvly-test-key"
+
+
+def test_load_deep_research_config_honors_youcom_override(monkeypatch):
+    monkeypatch.setattr(
+        config_loader,
+        "_load_config_data",
+        lambda: {"deep_research": {"enabled": True}},
+    )
+    monkeypatch.setenv("DEEP_RESEARCH_PROVIDER", "youcom")
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
+    monkeypatch.setenv("YOUCOM_API_KEY", "ydc-test-key")
+
+    config = config_loader.load_deep_research_config()
+
+    assert config.provider == "youcom"
+    assert config.api_key == "ydc-test-key"

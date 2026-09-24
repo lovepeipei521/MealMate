@@ -64,7 +64,8 @@ MealMate is built for kitchen beginners, fitness/weight-loss users, glycemic con
 - **Built-in Tools**:
   - Diet Tools: meal planning, diet logging, nutrition analysis
   - Knowledge Base Search: Call the internal RAG retriever with sources
-  - Web Search: Integrated Tavily search engine for real-time information queries
+  - Web Search: Integrated You.com Search API for real-time information queries
+  - Deep Research: Integrated Tavily Research API for reports with citations
   - AI Image Generation: Generate images using DALL-E 3 etc., auto-upload to imgbb for persistence
   - Calculator: Mathematical calculations
   - DateTime: Get current time, timezone conversion
@@ -236,8 +237,9 @@ REDIS_PASSWORD=your_redis_password
 MILVUS_USER=root
 MILVUS_PASSWORD=your_milvus_password
 
-# ==================== Web Search ====================
-WEB_SEARCH_API_KEY=your_tavily_api_key
+# ==================== Web Search & Deep Research ====================
+YOUCOM_API_KEY=ydc-your_youcom_api_key
+TAVILY_API_KEY=tvly-your_tavily_api_key
 
 # ==================== MCP Integration ====================
 # Amap (Gaode Maps) MCP Service API Key

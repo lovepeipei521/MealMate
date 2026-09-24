@@ -209,12 +209,25 @@ def load_web_search_config() -> WebSearchConfig:
 
 def load_deep_research_config() -> DeepResearchConfig:
     """
-    Load deep research configuration from YAML.
+    Load deep research configuration from YAML + environment variables.
 
-    No environment variables needed - uses YOUCOM_API_KEY from web_search.
+    Environment variables:
+    - DEEP_RESEARCH_PROVIDER: Provider override (tavily or youcom)
+    - TAVILY_API_KEY: Tavily Research API key when provider=tavily
+    - YOUCOM_API_KEY: You.com Research API key when provider=youcom
     """
     config_data = _load_config_data()
     dr_data = dict(config_data.get("deep_research", {}) or {})
+
+    provider_override = os.getenv("DEEP_RESEARCH_PROVIDER")
+    if provider_override:
+        dr_data["provider"] = provider_override
+
+    provider = str(dr_data.get("provider") or "tavily").strip().lower()
+    api_key_env = "YOUCOM_API_KEY" if provider == "youcom" else "TAVILY_API_KEY"
+    api_key = os.getenv(api_key_env)
+    if api_key:
+        dr_data["api_key"] = api_key
 
     return DeepResearchConfig.model_validate(dr_data)
 

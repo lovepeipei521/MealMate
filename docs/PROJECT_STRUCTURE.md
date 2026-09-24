@@ -64,7 +64,7 @@ config/
 ├── mcp_config.py         # MCP 服务器配置（Amap 等）
 ├── rag_config.py         # RAG 管道配置（检索参数、重排序）
 ├── vision_config.py      # 视觉模型和图片生成配置
-└── web_search_config.py  # Web 搜索配置（Tavily）
+└── web_search_config.py  # Web 搜索与深度研究配置（You.com Search / Tavily Research）
 ```
 
 **职责**：
@@ -276,7 +276,8 @@ services/
 ```
 tools/
 ├── __init__.py       # 模块初始化
-└── web_search.py     # Web 搜索工具（Tavily 集成）
+├── web_search.py     # Web 搜索工具（You.com Search 集成）
+└── deep_research.py  # 深度研究工具（Tavily Research 集成）
 ```
 
 **职责**：
@@ -374,7 +375,8 @@ agent/
 │   │   ├── __init__.py
 │   │   ├── calculator.py     # 数学计算工具
 │   │   ├── datetime.py       # 日期时间工具
-│   │   ├── websearch.py      # Web 搜索工具（Tavily）
+│   │   ├── websearch.py      # Web 搜索工具（You.com Search）
+│   │   ├── deep_research.py  # 深度研究工具（Tavily Research）
 │   │   ├── knowledge_base_search.py # 知识库检索工具（RAG）
 │   │   └── image_generator.py # 图片生成工具（DALL-E 3 + imgbb）
 │   ├── providers/        # 工具提供者
