@@ -20,10 +20,12 @@
 
 <div align="center">
 <p align="center">
-  <img src="./docs/agent.jpg" width="48%">
-  <img src="./docs/demo_2x.gif" width="48%"/>
-  <img src="./docs/diet.jpg" width="48%">
-  <img src="./docs/statistics.jpg" width="48%">
+  <img src="./docs/agent-preview.png" width="48%" alt="MealMate Agent">
+  <img src="./docs/agent-empty-preview.png" width="48%" alt="MealMate Agent 空状态">
+  <img src="./docs/knowledge-preview.png" width="48%" alt="MealMate 知识库">
+  <img src="./docs/diet-preview.png" width="48%" alt="MealMate 饮食管理">
+  <img src="./docs/statistics-preview.png" width="48%" alt="MealMate 模型统计">
+  <img src="./docs/evaluation-preview.png" width="48%" alt="MealMate RAG 评估监控">
 </p>
 </div>
 

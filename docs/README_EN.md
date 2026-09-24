@@ -15,10 +15,12 @@
 
 <div align="center">
 <p align="center">
-  <img src="./docs/agent.jpg" width="48%">
-  <img src="./docs/demo_2x.gif" width="48%"/>
-  <img src="./docs/diet.jpg" width="48%">
-  <img src="./docs/statistics.jpg" width="48%">
+  <img src="./agent-preview.png" width="48%" alt="MealMate Agent">
+  <img src="./agent-empty-preview.png" width="48%" alt="MealMate Agent empty state">
+  <img src="./knowledge-preview.png" width="48%" alt="MealMate Knowledge Base">
+  <img src="./diet-preview.png" width="48%" alt="MealMate Diet Management">
+  <img src="./statistics-preview.png" width="48%" alt="MealMate LLM Statistics">
+  <img src="./evaluation-preview.png" width="48%" alt="MealMate RAG Evaluation">
 </p>
 </div>
 

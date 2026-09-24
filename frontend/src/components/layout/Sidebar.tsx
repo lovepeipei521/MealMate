@@ -13,7 +13,8 @@ import {
     Check,
     X,
     ChevronDown,
-    Bot, // New Icon
+    Bot,
+    Utensils,
 } from 'lucide-react';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { ThemeToggle } from '../common/ThemeToggle';
@@ -189,7 +190,7 @@ export function Sidebar({
                 className={`
           fixed md:static inset-y-0 left-0 z-30
           flex flex-col flex-none
-          bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950
+          mm-sidebar bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950
           border-r border-gray-200 dark:border-gray-800
           transform transition-all duration-300 ease-in-out shadow-xl md:shadow-none
           ${isOpen
@@ -306,14 +307,13 @@ function SidebarHeader({
         <div className="p-4 border-b border-gray-200 dark:border-gray-800">
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 flex items-center justify-center">
-                        <img
-                            src="/logo.png"
-                            alt="MealMate Logo"
-                            className="w-full h-full object-contain"
-                        />
+                    <div className="mm-brand-mark !h-9 !w-9 !rounded-xl">
+                        <Utensils className="h-4 w-4" />
                     </div>
-                    <span className="font-bold text-gray-800 dark:text-gray-100">MealMate</span>
+                    <div>
+                        <div className="mm-brand-name !text-base">MealMate</div>
+                        <div className="mm-brand-sub">KITCHEN NOTES</div>
+                    </div>
                     
                     {onToggleAgentMode && (
                         <button
@@ -337,7 +337,7 @@ function SidebarHeader({
             </div>
             <button
                 onClick={onNewChat}
-                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm font-medium shadow-sm transition-all duration-200 hover:shadow-md bg-gradient-to-r from-orange-400 to-orange-500 hover:from-orange-500 hover:to-orange-600
+                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm font-medium shadow-sm transition-all duration-200 hover:shadow-md mm-new-chat bg-gradient-to-r from-orange-400 to-orange-500 hover:from-orange-500 hover:to-orange-600
                 `}
             >
                 <Plus className="w-4 h-4" />
@@ -376,7 +376,7 @@ function SidebarFooter({
                             {username || 'User'}
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">
-                            View & edit profile
+                            查看并编辑个人资料
                         </div>
                     </div>
                 </button>

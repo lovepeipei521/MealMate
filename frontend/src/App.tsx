@@ -288,7 +288,8 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   }, [logout, navigate]);
 
   return (
-    <div className="flex h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200">
+    <div className="mm-shell">
+      <div className="mm-app-frame flex text-gray-900 dark:text-gray-100 transition-colors duration-200">
       <Sidebar
         isOpen={isSidebarOpen}
         toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -308,7 +309,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
       />
 
       <div className="flex-1 flex flex-col h-full relative">
-        <header className="h-14 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm flex items-center px-4 justify-between z-50">
+        <header className="mm-topbar border-b flex items-center px-4 justify-between z-50">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -341,7 +342,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                   navigate(isAgentMode ? '/agent/diet' : '/diet');
                 }
               }}
-              className={`flex items-center gap-1 px-2 sm:px-3 py-1 rounded-full border transition-colors shrink-0 ${
+              className={`mm-nav-pill ${
                 isDietView
                   ? 'border-green-400 bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-200 dark:border-green-600'
                   : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
@@ -363,7 +364,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
                   navigate(isAgentMode ? '/agent/knowledge' : '/knowledge');
                 }
               }}
-              className={`flex items-center gap-1 px-2 sm:px-3 py-1 rounded-full border transition-colors shrink-0 ${
+              className={`mm-nav-pill ${
                 isKnowledgeView
                   ? 'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-600'
                   : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
@@ -375,7 +376,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
             <div ref={analyticsMenuRef} className="relative">
               <button
                 onClick={() => setIsAnalyticsMenuOpen(prev => !prev)}
-                className={`flex items-center gap-1 px-2 sm:px-3 py-1 rounded-full border transition-all duration-200 shrink-0 ${
+                className={`mm-nav-pill ${
                   isAnalyticsView
                     ? 'border-orange-400 bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-200 dark:border-orange-600'
                     : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-orange-50 dark:hover:bg-orange-900/20 hover:border-orange-300 dark:hover:border-orange-700'
@@ -447,9 +448,10 @@ function MainLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 flex flex-col overflow-hidden relative bg-gradient-to-b from-white to-gray-50 dark:from-gray-900 dark:to-gray-950">
+        <main className="mm-main flex-1 flex flex-col overflow-hidden relative">
           {children}
         </main>
+      </div>
       </div>
     </div>
   );
