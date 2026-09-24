@@ -346,30 +346,59 @@ class AgentContextCompressor:
             previous_summary=previous_summary,
         )
 
-        # 调用 LLM 生成摘要
+        # 调用 LLM 生成摘要（fast 失败时回退 normal 重试一次）
         try:
-            invoker = provider.create_invoker(llm_type="fast")
+            new_summary: Optional[str] = None
 
-            with llm_context("agent:compressor", user_id, session_id):
-                response = await invoker.ainvoke(
-                    [
-                        {
-                            "role": "system",
-                            "content": COMPRESS_SYSTEM_PROMPT,
-                        },
-                        {"role": "user", "content": prompt},
-                    ]
-                )
+            for index, llm_type in enumerate(("fast", "normal")):
+                try:
+                    invoker = provider.create_invoker(llm_type=llm_type)
 
-            new_summary = response.content
+                    with llm_context("agent:compressor", user_id, session_id):
+                        response = await invoker.ainvoke(
+                            [
+                                {
+                                    "role": "system",
+                                    "content": COMPRESS_SYSTEM_PROMPT,
+                                },
+                                {"role": "user", "content": prompt},
+                            ]
+                        )
+
+                    summary_text = getattr(response, "content", None)
+                    if not isinstance(summary_text, str) or not summary_text.strip():
+                        raise ValueError("LLM returned an empty compression summary")
+
+                    new_summary = summary_text.strip()
+                    break
+                except Exception:
+                    if index == 0:
+                        logger.warning(
+                            "Failed to compress context with fast model; retrying with normal model",
+                            exc_info=True,
+                        )
+                    else:
+                        logger.exception(
+                            "Failed to compress context after retrying with normal model"
+                        )
+
+            if not new_summary:
+                return False
+
             new_count = compressed_count + len(messages_to_compress)
 
             # 更新数据库
-            await repository.update_compressed_summary(
+            updated = await repository.update_compressed_summary(
                 session_id,
                 new_summary,
                 new_count,
             )
+            if not updated:
+                logger.error(
+                    "Failed to persist compressed summary for session %s",
+                    session_id,
+                )
+                return False
 
             logger.info(
                 f"Compressed {len(messages_to_compress)} messages for session {session_id}"
@@ -377,7 +406,7 @@ class AgentContextCompressor:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to compress context: {e}")
+            logger.exception(f"Failed to compress context: {e}")
             return False
 
 
