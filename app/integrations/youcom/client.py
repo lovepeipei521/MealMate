@@ -16,7 +16,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 YOUCOM_SEARCH_URL = "https://ydc-index.io/v1/search"
-YOUCOM_RESEARCH_URL = "https://ydc-index.io/v1/research"
+YOUCOM_RESEARCH_URL = "https://api.you.com/v1/research"
 
 
 class YoucomClient:
