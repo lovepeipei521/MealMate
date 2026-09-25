@@ -8,7 +8,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import type { Components } from 'react-markdown';
-import { getImageDisplayUrl } from '../../utils';
+import { getImageDisplayUrl, getImageProxyUrl } from '../../utils';
 
 // Import highlight.js styles (GitHub Dark theme)
 import 'highlight.js/styles/github-dark.css';
@@ -28,8 +28,10 @@ function MarkdownImage({
   title?: string;
 }) {
   const [failed, setFailed] = useState(false);
+  const [useProxy, setUseProxy] = useState(false);
   const originalSrc = src?.trim();
-  const displaySrc = getImageDisplayUrl(originalSrc);
+  const proxySrc = getImageProxyUrl(originalSrc);
+  const displaySrc = useProxy && proxySrc ? proxySrc : getImageDisplayUrl(originalSrc);
 
   if (!displaySrc) return null;
 
@@ -64,7 +66,13 @@ function MarkdownImage({
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          onError={() => setFailed(true)}
+          onError={() => {
+            if (!useProxy && proxySrc) {
+              setUseProxy(true);
+            } else {
+              setFailed(true);
+            }
+          }}
           className="max-h-[520px] max-w-full rounded-xl border border-gray-200/70 bg-gray-50 object-contain dark:border-gray-700 dark:bg-gray-900"
         />
       </a>

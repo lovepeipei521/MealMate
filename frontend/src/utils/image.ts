@@ -3,12 +3,24 @@ import { API_BASE } from '../constants';
 const PROXIED_IMAGE_HOSTS = new Set(['i.ibb.co', 'ibb.co']);
 
 /**
- * Route ImgBB images through the API origin.
+ * Keep normal image rendering direct.
  *
- * Some browsers/ad blockers block third-party image requests even though the
- * same URL opens correctly in a new tab. Same-origin image URLs are reliable.
+ * Routing every image through the backend makes all images fail whenever the
+ * server cannot reach the image host, even though most image hosts work fine
+ * from the user's browser.
  */
 export function getImageDisplayUrl(src?: string | null): string | undefined {
+  return src || undefined;
+}
+
+/**
+ * Build a same-origin fallback URL for ImgBB images.
+ *
+ * This is only used after a direct image request fails in the browser. It
+ * handles cases where a browser or extension blocks a third-party image
+ * request while the backend can still fetch it.
+ */
+export function getImageProxyUrl(src?: string | null): string | undefined {
   if (!src) return undefined;
 
   try {
@@ -20,8 +32,8 @@ export function getImageDisplayUrl(src?: string | null): string | undefined {
       return `${API_BASE}/image-proxy?url=${encodeURIComponent(parsed.toString())}`;
     }
   } catch {
-    // Relative or data URLs are already safe to use as-is.
+    // Relative or data URLs do not need a proxy.
   }
 
-  return src;
+  return undefined;
 }
