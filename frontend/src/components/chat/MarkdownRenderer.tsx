@@ -65,7 +65,6 @@ function MarkdownImage({
           title={title}
           loading="lazy"
           decoding="async"
-          referrerPolicy="no-referrer"
           onError={() => {
             if (!useProxy && proxySrc) {
               setUseProxy(true);
