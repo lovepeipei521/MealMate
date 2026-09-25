@@ -3,10 +3,12 @@
  * Renders markdown content with syntax highlighting and custom styling
  */
 
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import type { Components } from 'react-markdown';
+import { getImageDisplayUrl } from '../../utils';
 
 // Import highlight.js styles (GitHub Dark theme)
 import 'highlight.js/styles/github-dark.css';
@@ -14,6 +16,60 @@ import 'highlight.js/styles/github-dark.css';
 export interface MarkdownRendererProps {
   content: string;
   className?: string;
+}
+
+function MarkdownImage({
+  src,
+  alt,
+  title,
+}: {
+  src?: string;
+  alt?: string;
+  title?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const originalSrc = src?.trim();
+  const displaySrc = getImageDisplayUrl(originalSrc);
+
+  if (!displaySrc) return null;
+
+  if (failed) {
+    return (
+      <span className="my-3 inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+        图片加载失败，
+        <a
+          href={originalSrc}
+          className="font-semibold underline underline-offset-2"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          点击查看原图
+        </a>
+      </span>
+    );
+  }
+
+  return (
+    <span className="my-3 inline-block max-w-full align-top">
+      <a
+        href={originalSrc}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-block max-w-full"
+      >
+        <img
+          src={displaySrc}
+          alt={alt || '图片'}
+          title={title}
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+          className="max-h-[520px] max-w-full rounded-xl border border-gray-200/70 bg-gray-50 object-contain dark:border-gray-700 dark:bg-gray-900"
+        />
+      </a>
+    </span>
+  );
 }
 
 // Custom components for styling
@@ -51,6 +107,9 @@ const components: Components = {
     >
       {children}
     </a>
+  ),
+  img: ({ src, alt, title }) => (
+    <MarkdownImage src={src} alt={alt} title={title} />
   ),
   blockquote: ({ children }) => (
     <blockquote className="border-l-4 border-orange-400 pl-4 my-3 italic text-gray-600 dark:text-gray-400">

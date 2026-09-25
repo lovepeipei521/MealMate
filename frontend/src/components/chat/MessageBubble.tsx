@@ -8,6 +8,7 @@ import { Search, MessageCircle, Globe, BookOpen, ExternalLink, Clock, Loader2 } 
 import type { Message, Source } from '../../types';
 import { INTENT_LABELS } from '../../constants';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { getImageDisplayUrl } from '../../utils';
 import { ThinkingBlock } from './ThinkingBlock';
 import { CopyButton } from '../common';
 
@@ -192,7 +193,7 @@ export function MessageBubble({ message, hasError = false }: MessageBubbleProps)
                 {message.images.map((img, idx) => (
                   <img
                     key={idx}
-                    src={img}
+                    src={getImageDisplayUrl(img)}
                     alt={`Uploaded image ${idx + 1}`}
                     className="max-w-[200px] max-h-[200px] rounded-lg object-cover"
                   />

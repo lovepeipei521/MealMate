@@ -7,6 +7,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Clock, Loader2, BookOpen, Globe, ExternalLink } from 'lucide-react';
 import type { Message, Source } from '../../types';
 import { MarkdownRenderer } from '../chat/MarkdownRenderer';
+import { getImageDisplayUrl } from '../../utils';
 import { AgentThinkingBlock, type TraceStep } from './AgentThinkingBlock';
 import { CopyButton } from '../common';
 
@@ -351,7 +352,7 @@ export function AgentMessageBubble({ message, hasError = false }: AgentMessageBu
                 {userImages.map((imgUrl, idx) => (
                   <img
                     key={idx}
-                    src={imgUrl}
+                    src={getImageDisplayUrl(imgUrl)}
                     alt={`Uploaded image ${idx + 1}`}
                     className="max-w-[200px] max-h-[200px] rounded-lg object-cover"
                   />
