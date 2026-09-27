@@ -6,11 +6,11 @@ multiple agent runs, while a run represents one request handled by one agent.
 
 from __future__ import annotations
 
-import contextvars
 import dataclasses
 import json
 import uuid
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Iterator, Optional
