@@ -6,13 +6,17 @@ Agent 模块数据访问仓库
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from sqlalchemy import select, delete, func
 from sqlalchemy.orm import selectinload
 
-from app.agent.database.models import AgentSessionModel, AgentMessageModel
+from app.agent.database.models import (
+    AgentMessageModel,
+    AgentRunModel,
+    AgentSessionModel,
+)
 from app.database.session import get_session_context
 
 logger = logging.getLogger(__name__)
@@ -164,6 +168,7 @@ class AgentRepository:
         tool_name: Optional[str] = None,
         thinking_duration_ms: Optional[int] = None,
         answer_duration_ms: Optional[int] = None,
+        run_id: Optional[str] = None,
     ) -> AgentMessageModel:
         """保存消息到 Session。"""
         async with get_session_context() as session:
@@ -190,6 +195,7 @@ class AgentRepository:
                 tool_name=tool_name,
                 thinking_duration_ms=thinking_duration_ms,
                 answer_duration_ms=answer_duration_ms,
+                run_id=run_id,
             )
             session.add(message)
             await session.flush()
@@ -330,6 +336,140 @@ class AgentRepository:
                 message_count,
             )
             return True
+
+    # ==================== Agent Run Operations ====================
+
+    async def upsert_run(self, snapshot: dict) -> dict:
+        """
+        插入或更新一次 Agent 执行的聚合记录。
+
+        snapshot 由 tracing.TraceRunState.snapshot() 生成，包含 trace/run 标识、
+        状态、耗时、token 计数、工具/Subagent 计数以及 trace 明细。
+        使用 upsert 可以同时满足"开始时落库"和"结束时更新"两种调用。
+        """
+        run_id = snapshot.get("run_id")
+        if not run_id:
+            raise ValueError("snapshot.run_id is required")
+
+        session_id = snapshot.get("session_id")
+        try:
+            session_uuid = uuid.UUID(str(session_id)) if session_id else None
+        except (ValueError, TypeError):
+            session_uuid = None
+
+        async with get_session_context() as session:
+            stmt = select(AgentRunModel).where(AgentRunModel.run_id == run_id)
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+
+            fields = {
+                "trace_id": snapshot.get("trace_id"),
+                "user_id": snapshot.get("user_id"),
+                "session_id": session_uuid,
+                "agent_name": snapshot.get("agent_name") or "default",
+                "status": snapshot.get("status") or "running",
+                "started_at": _parse_dt(snapshot.get("started_at"))
+                or datetime.utcnow(),
+                "finished_at": _parse_dt(snapshot.get("finished_at")),
+                "duration_ms": snapshot.get("duration_ms"),
+                "ttft_ms": snapshot.get("ttft_ms"),
+                "iteration_count": snapshot.get("iteration_count", 0),
+                "llm_call_count": snapshot.get("llm_call_count", 0),
+                "tool_call_count": snapshot.get("tool_call_count", 0),
+                "subagent_call_count": snapshot.get("subagent_call_count", 0),
+                "tool_failure_count": snapshot.get("tool_failure_count", 0),
+                "input_tokens": snapshot.get("input_tokens", 0),
+                "output_tokens": snapshot.get("output_tokens", 0),
+                "total_tokens": snapshot.get("total_tokens", 0),
+                "error_type": snapshot.get("error_type"),
+                "error_message": snapshot.get("error_message"),
+                "source": snapshot.get("source") or "online",
+                "experiment_id": snapshot.get("experiment_id"),
+                "dataset_case_id": snapshot.get("dataset_case_id"),
+                "repeat_index": snapshot.get("repeat_index"),
+                "config_hash": snapshot.get("config_hash"),
+                "trace": snapshot.get("trace") or [],
+            }
+
+            if row is None:
+                row = AgentRunModel(trace_id=fields["trace_id"], run_id=run_id)
+                session.add(row)
+
+            for key, value in fields.items():
+                setattr(row, key, value)
+            row.updated_at = datetime.utcnow()
+
+            await session.flush()
+            return row.to_dict()
+
+    async def get_run(self, run_id: str) -> Optional[dict]:
+        """根据 run_id 获取一次 Agent 执行记录。"""
+        async with get_session_context() as session:
+            stmt = select(AgentRunModel).where(AgentRunModel.run_id == run_id)
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            return row.to_dict() if row else None
+
+    async def list_runs(
+        self,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        experiment_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[List[dict], int]:
+        """按用户/会话/实验列出 Agent 执行记录，便于评测与排查。"""
+        async with get_session_context() as session:
+            filters = []
+            if user_id:
+                filters.append(AgentRunModel.user_id == user_id)
+            if session_id:
+                try:
+                    filters.append(AgentRunModel.session_id == uuid.UUID(session_id))
+                except ValueError:
+                    return [], 0
+            if experiment_id:
+                filters.append(AgentRunModel.experiment_id == experiment_id)
+            if status:
+                filters.append(AgentRunModel.status == status)
+
+            count_stmt = select(func.count(AgentRunModel.id))
+            if filters:
+                count_stmt = count_stmt.where(*filters)
+            count_result = await session.execute(count_stmt)
+            total = count_result.scalar() or 0
+
+            stmt = (
+                select(AgentRunModel)
+                .order_by(AgentRunModel.started_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            if filters:
+                stmt = stmt.where(*filters)
+
+            result = await session.execute(stmt)
+            runs = result.scalars().all()
+            summaries = [r.to_dict() for r in runs]
+            for summary in summaries:
+                summary.pop("trace", None)
+            return summaries, total
+
+
+def _parse_dt(value: Any) -> Optional[datetime]:
+    """把 ISO 字符串/None 解析为 naive UTC datetime。"""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
 
 
 # Singleton instance

@@ -104,6 +104,8 @@ async def close_background_db() -> None:
 
 async def init_db() -> None:
     """Initialize database schema (create tables if not exist)."""
+    import app.agent.database.models  # noqa: F401
+
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await apply_compatibility_migrations(conn)

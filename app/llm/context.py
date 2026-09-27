@@ -23,6 +23,10 @@ class LLMCallContext:
     module_name: str  # 调用模块名称
     user_id: Optional[str] = None  # 用户 ID
     conversation_id: Optional[str] = None  # 对话 ID
+    trace_id: Optional[str] = None  # 端到端链路 ID
+    run_id: Optional[str] = None  # 一次 Agent 执行 ID
+    span_id: Optional[str] = None  # 一次 LLM/Tool 调用 ID
+    parent_span_id: Optional[str] = None
 
 
 # 上下文变量
@@ -35,6 +39,10 @@ def set_llm_context(
     module_name: str,
     user_id: Optional[str] = None,
     conversation_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    run_id: Optional[str] = None,
+    span_id: Optional[str] = None,
+    parent_span_id: Optional[str] = None,
 ) -> LLMCallContext:
     """
     设置当前 LLM 调用上下文
@@ -43,6 +51,9 @@ def set_llm_context(
         module_name: 调用模块名称
         user_id: 用户 ID（可选）
         conversation_id: 对话 ID（可选）
+        trace_id: 端到端链路 ID（可选）
+        run_id: Agent 执行 ID（可选）
+        span_id: 当前调用 span ID（可选）
 
     Returns:
         创建的上下文实例
@@ -52,6 +63,10 @@ def set_llm_context(
         module_name=module_name,
         user_id=user_id,
         conversation_id=conversation_id,
+        trace_id=trace_id,
+        run_id=run_id,
+        span_id=span_id,
+        parent_span_id=parent_span_id,
     )
     _llm_context.set(ctx)
     return ctx
@@ -72,6 +87,10 @@ def llm_context(
     module_name: str,
     user_id: Optional[str] = None,
     conversation_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    run_id: Optional[str] = None,
+    span_id: Optional[str] = None,
+    parent_span_id: Optional[str] = None,
 ):
     """
     LLM 调用上下文管理器
@@ -86,12 +105,33 @@ def llm_context(
         module_name: 调用模块名称
         user_id: 用户 ID（可选）
         conversation_id: 对话 ID（可选）
+        trace_id: 端到端链路 ID（可选）
+        run_id: Agent 执行 ID（可选）
+        span_id: 当前调用 span ID（可选）
 
     Yields:
         创建的上下文实例
     """
-    ctx = set_llm_context(module_name, user_id, conversation_id)
+    parent_ctx = get_llm_context()
+    trace_id = trace_id or (parent_ctx.trace_id if parent_ctx else None)
+    run_id = run_id or (parent_ctx.run_id if parent_ctx else None)
+    if parent_ctx and parent_span_id is None:
+        parent_span_id = parent_ctx.span_id
+    if trace_id and run_id and span_id is None:
+        span_id = str(uuid.uuid4())
+
+    ctx = LLMCallContext(
+        request_id=str(uuid.uuid4()),
+        module_name=module_name,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        trace_id=trace_id,
+        run_id=run_id,
+        span_id=span_id,
+        parent_span_id=parent_span_id,
+    )
+    token = _llm_context.set(ctx)
     try:
         yield ctx
     finally:
-        clear_llm_context()
+        _llm_context.reset(token)

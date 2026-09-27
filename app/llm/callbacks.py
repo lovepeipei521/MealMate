@@ -49,7 +49,7 @@ class LLMUsageCallbackHandler(BaseCallbackHandler):
 
     def __init__(self):
         super().__init__()
-        self._start_time: Dict[str, float] = {}
+        self._runs: Dict[str, Dict[str, Any]] = {}
 
     def on_llm_start(
         self,
@@ -60,7 +60,48 @@ class LLMUsageCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """LLM 调用开始时记录时间"""
-        self._start_time[str(run_id)] = time.time()
+        from app.agent.tracing import (
+            get_trace_state,
+            record_llm_call,
+            record_trace_step,
+        )
+
+        key = str(run_id)
+        ctx = get_llm_context()
+        trace_state = get_trace_state()
+        self._runs[key] = {
+            "started_at": time.time(),
+            "context": (
+                {
+                    "request_id": ctx.request_id,
+                    "module_name": ctx.module_name,
+                    "user_id": ctx.user_id,
+                    "conversation_id": ctx.conversation_id,
+                    "trace_id": ctx.trace_id,
+                    "run_id": ctx.run_id,
+                    "span_id": ctx.span_id,
+                    "parent_span_id": ctx.parent_span_id,
+                }
+                if ctx
+                else None
+            ),
+            "trace_state": trace_state,
+        }
+        if trace_state is not None:
+            record_llm_call(state=trace_state)
+            record_trace_step(
+                {
+                    "event_type": "llm_call",
+                    "action": "llm_start",
+                    "span_id": ctx.span_id if ctx else None,
+                    "parent_span_id": ctx.parent_span_id if ctx else None,
+                    "run_id": trace_state.run_id,
+                    "module_name": ctx.module_name if ctx else None,
+                    "status": "started",
+                    "started_at": time.time(),
+                },
+                state=trace_state,
+            )
 
     def on_llm_end(
         self,
@@ -70,12 +111,13 @@ class LLMUsageCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """LLM 调用完成时捕获 usage 并写入数据库"""
-        duration_ms = (
-            int((time.time() - self._start_time.pop(str(run_id), time.time())) * 1000)
-        )
+        from app.agent.tracing import record_llm_usage, record_trace_step
 
-        # 获取上下文
-        ctx = get_llm_context()
+        run = self._runs.pop(str(run_id), {})
+        started_at = run.get("started_at", time.time())
+        duration_ms = int((time.time() - started_at) * 1000)
+        ctx = run.get("context")
+        trace_state = run.get("trace_state")
         if not ctx:
             logger.debug("No LLM context set, skipping usage logging")
             return
@@ -87,26 +129,91 @@ class LLMUsageCallbackHandler(BaseCallbackHandler):
 
         # 构建日志数据
         log_data = {
-            "request_id": ctx.request_id,
-            "module_name": ctx.module_name,
-            "user_id": ctx.user_id,
-            "conversation_id": ctx.conversation_id,
+            "request_id": ctx["request_id"],
+            "module_name": ctx["module_name"],
+            "user_id": ctx["user_id"],
+            "conversation_id": ctx["conversation_id"],
+            "trace_id": ctx["trace_id"],
+            "run_id": ctx["run_id"],
+            "span_id": ctx["span_id"],
             "model_name": model_name,
             "tool_name": tool_name,
-            "input_tokens": usage_data.get("input_tokens")
-            or usage_data.get("prompt_tokens")
-            if usage_data
-            else None,
-            "output_tokens": usage_data.get("output_tokens")
-            or usage_data.get("completion_tokens")
-            if usage_data
-            else None,
+            "input_tokens": (
+                usage_data.get("input_tokens") or usage_data.get("prompt_tokens")
+                if usage_data
+                else None
+            ),
+            "output_tokens": (
+                usage_data.get("output_tokens") or usage_data.get("completion_tokens")
+                if usage_data
+                else None
+            ),
             "total_tokens": usage_data.get("total_tokens") if usage_data else None,
             "duration_ms": duration_ms,
         }
 
+        if trace_state is not None:
+            input_tokens = log_data["input_tokens"]
+            output_tokens = log_data["output_tokens"]
+            total_tokens = log_data["total_tokens"]
+            record_llm_usage(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                state=trace_state,
+            )
+            record_trace_step(
+                {
+                    "event_type": "llm_call",
+                    "action": "llm_end",
+                    "span_id": ctx["span_id"],
+                    "parent_span_id": ctx["parent_span_id"],
+                    "run_id": ctx["run_id"],
+                    "module_name": ctx["module_name"],
+                    "model_name": model_name,
+                    "tool_name": tool_name,
+                    "status": "success",
+                    "duration_ms": duration_ms,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens,
+                },
+                state=trace_state,
+            )
+
         # 异步写入数据库
         self._schedule_write(log_data)
+
+    def on_llm_error(
+        self,
+        error: BaseException,
+        *,
+        run_id: UUID,
+        **kwargs: Any,
+    ) -> None:
+        """Record failed LLM calls and release their per-run callback state."""
+        from app.agent.tracing import record_trace_step
+
+        run = self._runs.pop(str(run_id), {})
+        ctx = run.get("context")
+        trace_state = run.get("trace_state")
+        if trace_state is not None:
+            record_trace_step(
+                {
+                    "event_type": "llm_call",
+                    "action": "llm_end",
+                    "span_id": ctx.get("span_id") if ctx else None,
+                    "parent_span_id": ctx.get("parent_span_id") if ctx else None,
+                    "run_id": ctx.get("run_id") if ctx else trace_state.run_id,
+                    "status": "error",
+                    "duration_ms": int(
+                        (time.time() - run.get("started_at", time.time())) * 1000
+                    ),
+                    "error_type": type(error).__name__,
+                    "error": str(error),
+                },
+                state=trace_state,
+            )
 
     def _get_first_generation(self, response: LLMResult) -> Any:
         """获取第一个 generation"""
@@ -211,9 +318,14 @@ class LLMUsageCallbackHandler(BaseCallbackHandler):
                     request_id=log_data["request_id"],
                     module_name=log_data["module_name"],
                     user_id=log_data.get("user_id"),
-                    conversation_id=uuid.UUID(log_data["conversation_id"])
-                    if log_data.get("conversation_id")
-                    else None,
+                    conversation_id=(
+                        uuid.UUID(log_data["conversation_id"])
+                        if log_data.get("conversation_id")
+                        else None
+                    ),
+                    trace_id=log_data.get("trace_id"),
+                    run_id=log_data.get("run_id"),
+                    span_id=log_data.get("span_id"),
                     model_name=log_data.get("model_name"),
                     tool_name=log_data.get("tool_name"),
                     input_tokens=log_data.get("input_tokens"),

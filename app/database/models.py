@@ -87,7 +87,7 @@ class ConversationModel(Base):
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     # Metadata for extensibility (e.g., tags, preferences)
     metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)
-    
+
     # Compressed context summary for older messages
     compressed_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Number of messages included in the compressed summary
@@ -147,7 +147,7 @@ class MessageModel(Base):
     sources: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     intent: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     thinking: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
-    
+
     # Duration metrics for response timing (in milliseconds)
     thinking_duration_ms: Mapped[Optional[int]] = mapped_column(nullable=True)
     answer_duration_ms: Mapped[Optional[int]] = mapped_column(nullable=True)
@@ -380,6 +380,13 @@ class LLMUsageLogModel(Base):
     conversation_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
+    trace_id: Mapped[Optional[str]] = mapped_column(
+        String(36), nullable=True, index=True
+    )
+    run_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    span_id: Mapped[Optional[str]] = mapped_column(
+        String(36), nullable=True, index=True
+    )
     # Model information
     model_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     # Tool information (if this LLM call involved tool usage)
@@ -418,6 +425,9 @@ class LLMUsageLogModel(Base):
             "module_name": self.module_name,
             "user_id": self.user_id,
             "conversation_id": str(self.conversation_id) if self.conversation_id else None,
+            "trace_id": self.trace_id,
+            "run_id": self.run_id,
+            "span_id": self.span_id,
             "model_name": self.model_name,
             "tool_name": self.tool_name,
             "input_tokens": self.input_tokens,

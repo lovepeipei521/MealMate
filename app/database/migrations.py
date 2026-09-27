@@ -19,8 +19,21 @@ _PREFERENCE_COLUMN_MIGRATIONS = (
     """,
 )
 
+_AGENT_OBSERVABILITY_MIGRATIONS = (
+    "ALTER TABLE IF EXISTS public.agent_messages ADD COLUMN IF NOT EXISTS run_id varchar(36)",
+    "CREATE INDEX IF NOT EXISTS ix_agent_messages_run_id ON public.agent_messages (run_id)",
+    "ALTER TABLE IF EXISTS public.llm_usage_logs ADD COLUMN IF NOT EXISTS trace_id varchar(36)",
+    "ALTER TABLE IF EXISTS public.llm_usage_logs ADD COLUMN IF NOT EXISTS run_id varchar(36)",
+    "ALTER TABLE IF EXISTS public.llm_usage_logs ADD COLUMN IF NOT EXISTS span_id varchar(36)",
+    "CREATE INDEX IF NOT EXISTS ix_llm_usage_logs_trace_id ON public.llm_usage_logs (trace_id)",
+    "CREATE INDEX IF NOT EXISTS ix_llm_usage_logs_run_id ON public.llm_usage_logs (run_id)",
+    "CREATE INDEX IF NOT EXISTS ix_llm_usage_logs_span_id ON public.llm_usage_logs (span_id)",
+)
+
 
 async def apply_compatibility_migrations(conn: AsyncConnection) -> None:
     """Apply small, additive migrations that keep existing deployments working."""
     for statement in _PREFERENCE_COLUMN_MIGRATIONS:
+        await conn.execute(text(statement))
+    for statement in _AGENT_OBSERVABILITY_MIGRATIONS:
         await conn.execute(text(statement))

@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 from abc import ABC
+from datetime import datetime
 from typing import Any, AsyncGenerator
 
 from app.agent.types import (
@@ -23,6 +24,17 @@ from app.agent.types import (
 )
 from app.agent.registry import AgentHub
 from app.agent.context import AgentContextBuilder
+from app.agent.tracing import (
+    get_current_parent_span_id,
+    get_current_span_id,
+    get_current_trace_ids,
+    new_span_id,
+    record_iteration,
+    record_tool_call,
+    record_tool_result,
+    record_trace_step,
+    span_context,
+)
 from app.llm.provider import LLMInvoker
 
 logger = logging.getLogger(__name__)
@@ -97,18 +109,27 @@ class BaseAgent(ABC):
 
         # ReAct 循环
         for iteration in range(self.max_iterations):
+            record_iteration(iteration)
             try:
                 # 调用 LLM
-                with llm_context(
-                    f"agent:{self.name}", context.user_id, context.session_id
-                ):
-                    if tool_schemas:
-                        # 使用 function calling
-                        response = await self._invoke_with_tools(
-                            invoker, messages, tool_schemas
-                        )
-                    else:
-                        response = await invoker.ainvoke(messages)
+                with span_context() as llm_span_id:
+                    trace_id, run_id = get_current_trace_ids()
+                    parent_span_id = get_current_parent_span_id()
+                    with llm_context(
+                        f"agent:{self.name}",
+                        context.user_id,
+                        context.session_id,
+                        trace_id=trace_id,
+                        run_id=run_id,
+                        span_id=llm_span_id,
+                        parent_span_id=parent_span_id,
+                    ):
+                        if tool_schemas:
+                            response = await self._invoke_with_tools(
+                                invoker, messages, tool_schemas
+                            )
+                        else:
+                            response = await invoker.ainvoke(messages)
 
                 # 检查是否有 Tool 调用
                 tool_calls = self._extract_tool_calls(response)
@@ -118,10 +139,36 @@ class BaseAgent(ABC):
                     tool_results = []
 
                     for tool_call in tool_calls:
+                        tool_span_id = new_span_id()
+                        parent_span_id = llm_span_id
+                        started_at = datetime.utcnow()
+                        record_tool_call(tool_call.name)
+                        record_trace_step(
+                            {
+                                "event_type": "tool_call",
+                                "action": "tool_call",
+                                "span_id": tool_span_id,
+                                "parent_span_id": parent_span_id,
+                                "tool_call_id": tool_call.id,
+                                "tool_name": tool_call.name,
+                                "arguments": tool_call.arguments,
+                                "iteration": iteration,
+                                "status": "started",
+                                "started_at": started_at.isoformat(),
+                            }
+                        )
                         # 发送 Tool 调用事件
                         yield AgentChunk(
                             type=AgentChunkType.TOOL_CALL,
                             data=tool_call,
+                            metadata={
+                                "iteration": iteration,
+                                "span_id": tool_span_id,
+                                "parent_span_id": parent_span_id,
+                                "run_id": get_current_trace_ids()[1],
+                                "started_at": started_at.isoformat(),
+                                "status": "started",
+                            },
                         )
 
                         # 执行 Tool（支持 Subagent 流式轨迹）
@@ -129,6 +176,10 @@ class BaseAgent(ABC):
                         async for event_type, payload in self._execute_tool_call(
                             tool_executor,
                             tool_call,
+                            span_id=tool_span_id,
+                            parent_span_id=parent_span_id,
+                            user_id=context.user_id,
+                            session_id=context.session_id,
                         ):
                             if event_type == "trace":
                                 yield AgentChunk(
@@ -142,6 +193,26 @@ class BaseAgent(ABC):
                                 success=False,
                                 error="Tool execution returned no result",
                             )
+
+                        duration_ms = int(
+                            (datetime.utcnow() - started_at).total_seconds() * 1000
+                        )
+                        record_tool_result(result.success)
+                        record_trace_step(
+                            {
+                                "event_type": "tool_result",
+                                "action": "tool_result",
+                                "span_id": tool_span_id,
+                                "parent_span_id": parent_span_id,
+                                "tool_call_id": tool_call.id,
+                                "tool_name": tool_call.name,
+                                "iteration": iteration,
+                                "status": "success" if result.success else "error",
+                                "duration_ms": duration_ms,
+                                "result": result.data,
+                                "error": result.error,
+                            }
+                        )
 
                         # 构建结果信息
                         result_info = ToolResultInfo(
@@ -157,6 +228,15 @@ class BaseAgent(ABC):
                         yield AgentChunk(
                             type=AgentChunkType.TOOL_RESULT,
                             data=result_info,
+                            metadata={
+                                "iteration": iteration,
+                                "span_id": tool_span_id,
+                                "parent_span_id": parent_span_id,
+                                "run_id": get_current_trace_ids()[1],
+                                "started_at": started_at.isoformat(),
+                                "duration_ms": duration_ms,
+                                "status": "success" if result.success else "error",
+                            },
                         )
 
                     failure_message = self._network_tool_failure_message(tool_results)
@@ -187,22 +267,6 @@ class BaseAgent(ABC):
                     # 将 Tool 调用和结果加入消息历史
                     messages = self._append_tool_messages(
                         messages, response, tool_results
-                    )
-
-                    # 发送轨迹事件
-                    yield AgentChunk(
-                        type=AgentChunkType.TRACE,
-                        data=TraceStep(
-                            iteration=iteration,
-                            action="tool_call",
-                            tool_calls=[
-                                {
-                                    "name": tc.name,
-                                    "arguments": tc.arguments,
-                                }
-                                for tc in tool_calls
-                            ],
-                        ),
                     )
 
                 else:
@@ -292,146 +356,241 @@ class BaseAgent(ABC):
         )
 
         for iteration in range(self.max_iterations):
+            record_iteration(iteration)
             try:
-                with llm_context(
-                    f"agent:{self.name}", context.user_id, context.session_id
-                ):
-                    if tool_schemas:
-                        # 流式调用（带 Tool）
+                with span_context() as llm_span_id:
+                    trace_id, run_id = get_current_trace_ids()
+                    parent_span_id = get_current_parent_span_id()
+                    with llm_context(
+                        f"agent:{self.name}",
+                        context.user_id,
+                        context.session_id,
+                        trace_id=trace_id,
+                        run_id=run_id,
+                        span_id=llm_span_id,
+                        parent_span_id=parent_span_id,
+                    ):
                         collected_content = ""
-                        collected_tool_calls = []
+                        if tool_schemas:
+                            # 流式调用（带 Tool）
+                            collected_tool_calls = []
 
-                        async for chunk in self._stream_with_tools(
-                            invoker, messages, tool_schemas
-                        ):
-                            if hasattr(chunk, "content") and chunk.content:
-                                collected_content += chunk.content
-                                yield AgentChunk(
-                                    type=AgentChunkType.CONTENT,
-                                    data=chunk.content,
-                                )
-
-                            # Collect tool calls from streaming chunks
-                            # LangChain uses tool_call_chunks for streaming partial data
-                            if (
-                                hasattr(chunk, "tool_call_chunks")
-                                and chunk.tool_call_chunks
+                            async for chunk in self._stream_with_tools(
+                                invoker, messages, tool_schemas
                             ):
-                                for tc in chunk.tool_call_chunks:
-                                    collected_tool_calls.append(tc)
-                            elif hasattr(chunk, "tool_calls") and chunk.tool_calls:
-                                for tc in chunk.tool_calls:
-                                    collected_tool_calls.append(tc)
-
-                        # 处理收集的 Tool 调用
-                        if collected_tool_calls:
-                            tool_calls = self._parse_streaming_tool_calls(
-                                collected_tool_calls
-                            )
-                            tool_results = []
-
-                            for tool_call in tool_calls:
-                                yield AgentChunk(
-                                    type=AgentChunkType.TOOL_CALL,
-                                    data=tool_call,
-                                )
-
-                                result = None
-                                async for event_type, payload in self._execute_tool_call(
-                                    tool_executor,
-                                    tool_call,
-                                ):
-                                    if event_type == "trace":
-                                        yield AgentChunk(
-                                            type=AgentChunkType.TRACE,
-                                            data=payload,
-                                        )
-                                    else:
-                                        result = payload
-                                if result is None:
-                                    result = ToolResult(
-                                        success=False,
-                                        error="Tool execution returned no result",
+                                if hasattr(chunk, "content") and chunk.content:
+                                    collected_content += chunk.content
+                                    yield AgentChunk(
+                                        type=AgentChunkType.CONTENT,
+                                        data=chunk.content,
                                     )
 
-                                result_info = ToolResultInfo(
-                                    tool_call_id=tool_call.id,
-                                    name=tool_call.name,
-                                    success=result.success,
-                                    result=result.data,
-                                    error=result.error,
-                                )
-                                tool_results.append(result_info)
+                                # Collect tool calls from streaming chunks
+                                # LangChain uses tool_call_chunks for streaming partial data
+                                if (
+                                    hasattr(chunk, "tool_call_chunks")
+                                    and chunk.tool_call_chunks
+                                ):
+                                    for tc in chunk.tool_call_chunks:
+                                        collected_tool_calls.append(tc)
+                                elif hasattr(chunk, "tool_calls") and chunk.tool_calls:
+                                    for tc in chunk.tool_calls:
+                                        collected_tool_calls.append(tc)
 
-                                yield AgentChunk(
-                                    type=AgentChunkType.TOOL_RESULT,
-                                    data=result_info,
+                            # 处理收集的 Tool 调用
+                            if collected_tool_calls:
+                                tool_calls = self._parse_streaming_tool_calls(
+                                    collected_tool_calls
+                                )
+                                tool_results = []
+
+                                for tool_call in tool_calls:
+                                    tool_span_id = new_span_id()
+                                    parent_span_id = llm_span_id
+                                    started_at = datetime.utcnow()
+                                    record_tool_call(tool_call.name)
+                                    record_trace_step(
+                                        {
+                                            "event_type": "tool_call",
+                                            "action": "tool_call",
+                                            "span_id": tool_span_id,
+                                            "parent_span_id": parent_span_id,
+                                            "tool_call_id": tool_call.id,
+                                            "tool_name": tool_call.name,
+                                            "arguments": tool_call.arguments,
+                                            "iteration": iteration,
+                                            "status": "started",
+                                            "started_at": started_at.isoformat(),
+                                        }
+                                    )
+                                    yield AgentChunk(
+                                        type=AgentChunkType.TOOL_CALL,
+                                        data=tool_call,
+                                        metadata={
+                                            "iteration": iteration,
+                                            "span_id": tool_span_id,
+                                            "parent_span_id": parent_span_id,
+                                            "run_id": run_id,
+                                            "started_at": started_at.isoformat(),
+                                            "status": "started",
+                                        },
+                                    )
+
+                                    result = None
+                                    async for (
+                                        event_type,
+                                        payload,
+                                    ) in self._execute_tool_call(
+                                        tool_executor,
+                                        tool_call,
+                                        span_id=tool_span_id,
+                                        parent_span_id=parent_span_id,
+                                        user_id=context.user_id,
+                                        session_id=context.session_id,
+                                    ):
+                                        if event_type == "trace":
+                                            yield AgentChunk(
+                                                type=AgentChunkType.TRACE,
+                                                data=payload,
+                                            )
+                                        else:
+                                            result = payload
+                                    if result is None:
+                                        result = ToolResult(
+                                            success=False,
+                                            error="Tool execution returned no result",
+                                        )
+
+                                    duration_ms = int(
+                                        (datetime.utcnow() - started_at).total_seconds()
+                                        * 1000
+                                    )
+                                    record_tool_result(result.success)
+                                    record_trace_step(
+                                        {
+                                            "event_type": "tool_result",
+                                            "action": "tool_result",
+                                            "span_id": tool_span_id,
+                                            "parent_span_id": parent_span_id,
+                                            "tool_call_id": tool_call.id,
+                                            "tool_name": tool_call.name,
+                                            "iteration": iteration,
+                                            "status": (
+                                                "success" if result.success else "error"
+                                            ),
+                                            "duration_ms": duration_ms,
+                                            "result": result.data,
+                                            "error": result.error,
+                                        }
+                                    )
+
+                                    result_info = ToolResultInfo(
+                                        tool_call_id=tool_call.id,
+                                        name=tool_call.name,
+                                        success=result.success,
+                                        result=result.data,
+                                        error=result.error,
+                                    )
+                                    tool_results.append(result_info)
+
+                                    yield AgentChunk(
+                                        type=AgentChunkType.TOOL_RESULT,
+                                        data=result_info,
+                                        metadata={
+                                            "iteration": iteration,
+                                            "span_id": tool_span_id,
+                                            "parent_span_id": parent_span_id,
+                                            "run_id": run_id,
+                                            "started_at": started_at.isoformat(),
+                                            "duration_ms": duration_ms,
+                                            "status": (
+                                                "success" if result.success else "error"
+                                            ),
+                                        },
+                                    )
+
+                                failure_message = self._network_tool_failure_message(
+                                    tool_results
+                                )
+                                if failure_message:
+                                    logger.warning(
+                                        "Terminal network tool failure for agent %s: %s",
+                                        self.name,
+                                        failure_message,
+                                    )
+                                    yield AgentChunk(
+                                        type=AgentChunkType.CONTENT,
+                                        data=failure_message,
+                                    )
+                                    yield AgentChunk(
+                                        type=AgentChunkType.TRACE,
+                                        data=TraceStep(
+                                            iteration=iteration,
+                                            action="finish",
+                                            content=failure_message,
+                                        ),
+                                    )
+                                    yield AgentChunk(
+                                        type=AgentChunkType.DONE,
+                                        data={"iterations": iteration + 1},
+                                    )
+                                    return
+
+                                # 构建消息继续对话
+                                messages = self._append_tool_messages_streaming(
+                                    messages,
+                                    collected_content,
+                                    tool_calls,
+                                    tool_results,
                                 )
 
-                            failure_message = self._network_tool_failure_message(
-                                tool_results
-                            )
-                            if failure_message:
-                                logger.warning(
-                                    "Terminal network tool failure for agent %s: %s",
-                                    self.name,
-                                    failure_message,
-                                )
-                                yield AgentChunk(
-                                    type=AgentChunkType.CONTENT,
-                                    data=failure_message,
-                                )
+                                # Note: We don't send TRACE event here because
+                                # TOOL_CALL and TOOL_RESULT events are already sent
+                                # and service.py will create trace_steps from them
+                            else:
+                                # 无 Tool 调用，结束
                                 yield AgentChunk(
                                     type=AgentChunkType.TRACE,
                                     data=TraceStep(
                                         iteration=iteration,
                                         action="finish",
-                                        content=failure_message,
+                                        content=collected_content,
                                     ),
                                 )
                                 yield AgentChunk(
                                     type=AgentChunkType.DONE,
                                     data={"iterations": iteration + 1},
                                 )
-                                return
-
-                            # 构建消息继续对话
-                            messages = self._append_tool_messages_streaming(
-                                messages, collected_content, tool_calls, tool_results
-                            )
-
-                            # Note: We don't send TRACE event here because
-                            # TOOL_CALL and TOOL_RESULT events are already sent
-                            # and service.py will create trace_steps from them
+                                break
                         else:
-                            # 无 Tool 调用，结束
+                            # 无 Tool，直接流式输出
+                            async for chunk in invoker.astream(messages):
+                                if hasattr(chunk, "content") and chunk.content:
+                                    collected_content += chunk.content
+                                    yield AgentChunk(
+                                        type=AgentChunkType.CONTENT,
+                                        data=chunk.content,
+                                    )
+
+                            finish_step = TraceStep(
+                                iteration=iteration,
+                                action="finish",
+                                content=collected_content,
+                                span_id=llm_span_id,
+                                parent_span_id=parent_span_id,
+                                run_id=run_id,
+                                event_type="agent_finish",
+                                status="success",
+                            )
                             yield AgentChunk(
                                 type=AgentChunkType.TRACE,
-                                data=TraceStep(
-                                    iteration=iteration,
-                                    action="finish",
-                                    content=collected_content,
-                                ),
+                                data=finish_step,
                             )
                             yield AgentChunk(
                                 type=AgentChunkType.DONE,
                                 data={"iterations": iteration + 1},
                             )
                             break
-                    else:
-                        # 无 Tool，直接流式输出
-                        async for chunk in invoker.astream(messages):
-                            if hasattr(chunk, "content") and chunk.content:
-                                yield AgentChunk(
-                                    type=AgentChunkType.CONTENT,
-                                    data=chunk.content,
-                                )
-
-                        yield AgentChunk(
-                            type=AgentChunkType.DONE,
-                            data={"iterations": iteration + 1},
-                        )
-                        break
 
             except Exception as e:
                 logger.exception(f"Agent streaming iteration {iteration} failed: {e}")
@@ -461,44 +620,63 @@ class BaseAgent(ABC):
         self,
         tool_executor,
         tool_call: ToolCallInfo,
+        span_id: str | None = None,
+        parent_span_id: str | None = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
     ) -> AsyncGenerator[tuple[str, Any], None]:
-        if not tool_executor:
-            yield (
-                "result",
-                ToolResult(success=False, error="Tool executor unavailable"),
-            )
-            return
-        if tool_call.name.startswith("subagent_"):
-            queue: asyncio.Queue[TraceStep] = asyncio.Queue()
+        from app.agent.tracing import get_current_parent_span_id, get_current_trace_ids
+        from app.llm.context import llm_context
 
-            async def handle_event(step: TraceStep) -> None:
-                await queue.put(step)
+        with span_context(span_id, parent_span_id):
+            trace_id, run_id = get_current_trace_ids()
+            current_span_id = get_current_span_id()
+            with llm_context(
+                f"agent:tool:{tool_call.name}",
+                user_id,
+                session_id,
+                trace_id=trace_id,
+                run_id=run_id,
+                span_id=current_span_id,
+                parent_span_id=get_current_parent_span_id(),
+            ):
+                if not tool_executor:
+                    yield (
+                        "result",
+                        ToolResult(success=False, error="Tool executor unavailable"),
+                    )
+                    return
+                if tool_call.name.startswith("subagent_"):
+                    queue: asyncio.Queue[TraceStep] = asyncio.Queue()
 
-            task = asyncio.create_task(
-                tool_executor.execute(
+                    async def handle_event(step: TraceStep) -> None:
+                        await queue.put(step)
+
+                    task = asyncio.create_task(
+                        tool_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                            event_handler=handle_event,
+                        )
+                    )
+                    while True:
+                        if task.done() and queue.empty():
+                            break
+                        try:
+                            step = await asyncio.wait_for(queue.get(), timeout=0.1)
+                            yield ("trace", step)
+                        except asyncio.TimeoutError:
+                            await asyncio.sleep(0)
+
+                    result = await task
+                    yield ("result", result)
+                    return
+
+                result = await tool_executor.execute(
                     tool_call.name,
                     tool_call.arguments,
-                    event_handler=handle_event,
                 )
-            )
-            while True:
-                if task.done() and queue.empty():
-                    break
-                try:
-                    step = await asyncio.wait_for(queue.get(), timeout=0.1)
-                    yield ("trace", step)
-                except asyncio.TimeoutError:
-                    await asyncio.sleep(0)
-
-            result = await task
-            yield ("result", result)
-            return
-
-        result = await tool_executor.execute(
-            tool_call.name,
-            tool_call.arguments,
-        )
-        yield ("result", result)
+                yield ("result", result)
 
     async def _invoke_with_tools(
         self,
@@ -613,7 +791,7 @@ class BaseAgent(ABC):
 
         if hasattr(response, "tool_calls") and response.tool_calls:
             assistant_msg["tool_calls"] = response.tool_calls
-            assistant_msg["content"] = None # type: ignore
+            assistant_msg["content"] = None  # type: ignore
 
         messages.append(assistant_msg)
 

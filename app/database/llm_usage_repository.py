@@ -37,6 +37,9 @@ class LLMUsageRepository:
         output_tokens: Optional[int] = None,
         total_tokens: Optional[int] = None,
         duration_ms: Optional[int] = None,
+        trace_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+        span_id: Optional[str] = None,
     ) -> LLMUsageLogModel:
         """
         Create a new LLM usage log entry.
@@ -63,6 +66,9 @@ class LLMUsageRepository:
                 module_name=module_name,
                 user_id=user_id,
                 conversation_id=uuid.UUID(conversation_id) if conversation_id else None,
+                trace_id=trace_id,
+                run_id=run_id,
+                span_id=span_id,
                 model_name=model_name,
                 tool_name=tool_name,
                 input_tokens=input_tokens,
@@ -571,6 +577,9 @@ class LLMUsageRepository:
             "module_name": log.module_name,
             "user_id": log.user_id,
             "conversation_id": str(log.conversation_id) if log.conversation_id else None,
+            "trace_id": log.trace_id,
+            "run_id": log.run_id,
+            "span_id": log.span_id,
             "model_name": log.model_name,
             "tool_name": log.tool_name,
             "input_tokens": log.input_tokens,

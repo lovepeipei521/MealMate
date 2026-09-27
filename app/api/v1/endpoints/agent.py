@@ -7,9 +7,9 @@ Independent from the conversation endpoints, designed for agent-based interactio
 import asyncio
 import base64
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator, HttpUrl
 
@@ -19,6 +19,7 @@ from app.agent.registry import AgentHub
 from app.security.dependencies import check_message_security
 from app.services.mcp_service import mcp_service
 from app.services.subagent_service import subagent_service
+from app.agent.tracing import new_run_id, new_trace_id, normalize_trace_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -130,6 +131,11 @@ class AgentChatRequest(BaseModel):
     agent_name: str = Field(default="default", max_length=100)
     stream: bool = True
     selected_tools: Optional[List[str]] = None  # User-selected tools
+    source: Literal["online", "evaluation"] = "online"
+    experiment_id: Optional[str] = Field(default=None, max_length=128)
+    dataset_case_id: Optional[str] = Field(default=None, max_length=128)
+    repeat_index: Optional[int] = Field(default=None, ge=0)
+    config_hash: Optional[str] = Field(default=None, max_length=128)
 
     @field_validator("message")
     @classmethod
@@ -166,6 +172,7 @@ class AgentMessageResponse(BaseModel):
     tool_calls: Optional[List[Dict[str, Any]]] = None
     tool_call_id: Optional[str] = None
     tool_name: Optional[str] = None
+    run_id: Optional[str] = None
     thinking_duration_ms: Optional[int] = None
     answer_duration_ms: Optional[int] = None
 
@@ -366,10 +373,6 @@ async def agent_chat(request: AgentChatRequest, http_request: Request):
             {"data": img.data, "mime_type": img.mime_type} for img in request.images
         ]
 
-    logger.info(
-        f"Agent chat request: '{secured_message[:50]}...', agent={request.agent_name}, images={len(images_data) if images_data else 0}"
-    )
-
     # Get user information from request state
     user_id = getattr(http_request.state, "user_id", None)
     if not user_id:
@@ -381,6 +384,19 @@ async def agent_chat(request: AgentChatRequest, http_request: Request):
             raise HTTPException(status_code=404, detail="Session not found")
         if session.get("user_id") != str(user_id):
             raise HTTPException(status_code=403, detail="无权访问此会话")
+
+    trace_id = (
+        normalize_trace_id(http_request.headers.get("X-Trace-Id")) or new_trace_id()
+    )
+    run_id = new_run_id()
+    logger.info(
+        "Agent chat request: '%s...', agent=%s, images=%d, trace_id=%s, run_id=%s",
+        secured_message[:50],
+        request.agent_name,
+        len(images_data) if images_data else 0,
+        trace_id,
+        run_id,
+    )
 
     # Use queue-based approach to ensure backend continues even if client disconnects
     queue: asyncio.Queue[str | None] = asyncio.Queue()
@@ -400,6 +416,13 @@ async def agent_chat(request: AgentChatRequest, http_request: Request):
                 streaming=request.stream,
                 selected_tools=request.selected_tools,
                 images=images_data,
+                trace_id=trace_id,
+                run_id=run_id,
+                source=request.source,
+                experiment_id=request.experiment_id,
+                dataset_case_id=request.dataset_case_id,
+                repeat_index=request.repeat_index,
+                config_hash=request.config_hash,
             ):
                 await queue.put(chunk)
         except Exception as e:
@@ -440,12 +463,16 @@ async def agent_chat(request: AgentChatRequest, http_request: Request):
                     "Cache-Control": "no-cache",
                     "Connection": "keep-alive",
                     "X-Accel-Buffering": "no",  # Disable nginx buffering
+                    "X-Trace-Id": trace_id,
+                    "X-Run-Id": run_id,
                 },
             )
         else:
             # Non-streaming: collect all chunks
             full_response = ""
             session_id = None
+            response_trace_id = trace_id
+            response_run_id = run_id
             tool_results = []
 
             async for event in agent_service.chat(
@@ -456,6 +483,13 @@ async def agent_chat(request: AgentChatRequest, http_request: Request):
                 streaming=False,
                 selected_tools=request.selected_tools,
                 images=images_data,
+                trace_id=trace_id,
+                run_id=run_id,
+                source=request.source,
+                experiment_id=request.experiment_id,
+                dataset_case_id=request.dataset_case_id,
+                repeat_index=request.repeat_index,
+                config_hash=request.config_hash,
             ):
                 # Parse SSE event
                 if event.startswith("data: "):
@@ -467,20 +501,66 @@ async def agent_chat(request: AgentChatRequest, http_request: Request):
                         full_response += data.get("content", "")
                     elif data["type"] == "session":
                         session_id = data.get("session_id")
+                        response_trace_id = data.get("trace_id", response_trace_id)
+                        response_run_id = data.get("run_id", response_run_id)
                     elif data["type"] == "tool_result":
                         tool_results.append(data)
                     elif data["type"] == "done":
                         session_id = data.get("session_id", session_id)
+                        response_trace_id = data.get("trace_id", response_trace_id)
+                        response_run_id = data.get("run_id", response_run_id)
 
             return {
                 "session_id": session_id,
                 "response": full_response,
                 "tool_results": tool_results,
+                "trace_id": response_trace_id,
+                "run_id": response_run_id,
             }
 
     except Exception as e:
         logger.error(f"Error processing agent chat: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="处理请求时发生错误")
+
+
+@router.get("/agent/runs")
+async def list_agent_runs(
+    http_request: Request,
+    session_id: Optional[str] = None,
+    experiment_id: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    """List the authenticated user's Agent runs for tracing and evaluation."""
+    user_id = getattr(http_request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="需要登录")
+
+    runs, total = await agent_service.list_runs(
+        user_id=str(user_id),
+        session_id=session_id,
+        experiment_id=experiment_id,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return {"runs": runs, "total": total}
+
+
+@router.get("/agent/run/{run_id}")
+async def get_agent_run(run_id: str, http_request: Request):
+    """Get one Agent run, including its persisted trace, for its owner."""
+    user_id = getattr(http_request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="需要登录")
+
+    run = await agent_service.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Agent run not found")
+    if run.get("user_id") != str(user_id):
+        raise HTTPException(status_code=403, detail="无权访问此 Agent run")
+    return run
 
 
 @router.get("/agent/session/{session_id}")

@@ -103,6 +103,9 @@ class AgentMessageModel(Base):
     # user: [{type: "image", url, display_url, thumb_url}, ...]
     trace: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
+    # 可观测性：关联一次 Agent 执行
+    run_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+
     # Tool 相关字段
     tool_calls: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     tool_call_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
@@ -135,6 +138,110 @@ class AgentMessageModel(Base):
             "tool_name": self.tool_name,
             "thinking_duration_ms": self.thinking_duration_ms,
             "answer_duration_ms": self.answer_duration_ms,
+            "run_id": self.run_id,
+        }
+
+
+class AgentRunModel(Base):
+    """Persisted lifecycle and aggregate metrics for one Agent run."""
+
+    __tablename__ = "agent_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    trace_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    user_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+    session_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    agent_name: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="default"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="running", index=True
+    )
+
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    ttft_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    iteration_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    llm_call_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tool_call_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    subagent_call_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tool_failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    error_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="online")
+    experiment_id: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True, index=True
+    )
+    dataset_case_id: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True, index=True
+    )
+    repeat_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    config_hash: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True, index=True
+    )
+    trace: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_agent_runs_trace_run", "trace_id", "run_id"),
+        Index("ix_agent_runs_user_started", "user_id", "started_at"),
+    )
+
+    def to_dict(self) -> dict:
+        """Serialize run metrics and trace for APIs and evaluation tooling."""
+        return {
+            "id": str(self.id),
+            "trace_id": self.trace_id,
+            "run_id": self.run_id,
+            "user_id": self.user_id,
+            "session_id": str(self.session_id) if self.session_id else None,
+            "agent_name": self.agent_name,
+            "status": self.status,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "duration_ms": self.duration_ms,
+            "ttft_ms": self.ttft_ms,
+            "iteration_count": self.iteration_count,
+            "llm_call_count": self.llm_call_count,
+            "tool_call_count": self.tool_call_count,
+            "subagent_call_count": self.subagent_call_count,
+            "tool_failure_count": self.tool_failure_count,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
+            "error_type": self.error_type,
+            "error_message": self.error_message,
+            "source": self.source,
+            "experiment_id": self.experiment_id,
+            "dataset_case_id": self.dataset_case_id,
+            "repeat_index": self.repeat_index,
+            "config_hash": self.config_hash,
+            "trace": self.trace or [],
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 

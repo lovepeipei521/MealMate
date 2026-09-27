@@ -22,6 +22,20 @@ from app.agent.context import AgentContextBuilder, AgentContextCompressor
 from app.agent.database.repository import AgentRepository, agent_repository
 from app.agent.registry import AgentHub
 from app.agent.prompts import VISION_ANALYSIS_PROMPT_TEMPLATE
+from app.agent.tracing import (
+    create_trace_state,
+    mark_run_cancelled,
+    mark_run_succeeded,
+    record_first_token,
+    record_trace_step,
+    reset_trace_state,
+    reset_span_context,
+    set_span_context,
+    set_run_error,
+    set_trace_state,
+    span_context,
+    snapshot_trace_state,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +151,14 @@ class AgentService:
         streaming: bool = False,
         selected_tools: Optional[list[str]] = None,
         images: Optional[list[dict]] = None,
+        *,
+        trace_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+        source: str = "online",
+        experiment_id: Optional[str] = None,
+        dataset_case_id: Optional[str] = None,
+        repeat_index: Optional[int] = None,
+        config_hash: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """
         主入口：与 Agent 对话。
@@ -163,35 +185,94 @@ class AgentService:
         thinking_end_time: Optional[float] = None
         answer_end_time: Optional[float] = None
 
+        run_state = None
+        trace_token = None
+        span_token = None
+        should_compress = False
+        run_error: Optional[str] = None
+
         try:
             # 1. 获取或创建 Session（不再传入 agent_name）
             session = await self.repository.get_or_create_session(session_id, user_id)
             actual_session_id = str(session.id)
 
-            # 2. 发送 session 信息
+            # 2. 初始化本次运行的追踪状态（trace/run + 聚合指标）并落库
+            run_state = create_trace_state(
+                trace_id=trace_id,
+                run_id=run_id,
+                user_id=user_id,
+                session_id=actual_session_id,
+                agent_name=agent_name,
+                source=source,
+                experiment_id=experiment_id,
+                dataset_case_id=dataset_case_id,
+                repeat_index=repeat_index,
+                config_hash=config_hash,
+            )
+            trace_token = set_trace_state(run_state)
+            _, span_token = set_span_context(run_state.run_id)
+            record_trace_step(
+                {
+                    "event_type": "run",
+                    "action": "run_start",
+                    "span_id": run_state.run_id,
+                    "run_id": run_state.run_id,
+                    "started_at": run_state.started_at.isoformat(),
+                    "status": "running",
+                },
+                state=run_state,
+            )
+            await self._persist_run(run_state)
+
+            # 3. 发送 session 信息（附带 trace/run，便于前端与后端日志对齐）
             yield self._format_event(
                 "session",
                 {
                     "session_id": actual_session_id,
                     "title": session.title,
+                    "trace_id": run_state.trace_id,
+                    "run_id": run_state.run_id,
                 },
             )
 
             # 3. 组装上下文
-            context = await self.context_builder.build(
-                session,
-                message,
+            from app.llm.context import llm_context
+
+            with llm_context(
+                "agent:context_builder",
                 user_id,
-                agent_name=agent_name,
-                selected_tools=selected_tools,
-                images=images,
-            )
+                actual_session_id,
+                trace_id=run_state.trace_id,
+                run_id=run_state.run_id,
+                span_id=run_state.run_id,
+            ):
+                context = await self.context_builder.build(
+                    session,
+                    message,
+                    user_id,
+                    agent_name=agent_name,
+                    selected_tools=selected_tools,
+                    images=images,
+                )
 
             tool_events = []
 
             # 4. If images present, run vision analysis and emit event
             if context.images:
-                vision_result = await self._analyze_images(context)
+                from app.agent.tracing import span_context, get_current_trace_ids
+                from app.llm.context import llm_context
+
+                with span_context() as vision_span_id:
+                    current_trace_id, current_run_id = get_current_trace_ids()
+                    with llm_context(
+                        "agent:vision_analysis",
+                        user_id,
+                        actual_session_id,
+                        trace_id=current_trace_id,
+                        run_id=current_run_id,
+                        span_id=vision_span_id,
+                    ):
+                        vision_result = await self._analyze_images(context)
                 if vision_result:
                     vision_tool_call_id = f"vision-{uuid.uuid4().hex}"
                     context.vision_analysis = vision_result
@@ -236,12 +317,14 @@ class AgentService:
             else:
                 agent_generator = agent.run(invoker, context)
 
-            async for chunk in agent_generator:
+            async for chunk in self._with_agent_span(agent_generator):
                 # 处理不同类型的 chunk
                 if chunk.type == AgentChunkType.CONTENT:
                     # Track thinking end and answer start times on first content
                     if thinking_end_time is None:
                         thinking_end_time = time.time()
+                        if streaming:
+                            record_first_token(run_state)
                     response_content += chunk.data
                     yield self._format_event(
                         "text",
@@ -252,10 +335,8 @@ class AgentService:
 
                 elif chunk.type == AgentChunkType.TOOL_CALL:
                     tool_call = chunk.data
-                    # Calculate iteration number
-                    iteration = len(
-                        [t for t in trace_steps if t.get("action") == "tool_call"]
-                    )
+                    # iteration 由 Agent 写入 chunk.metadata，避免用 trace 条数误判
+                    iteration = chunk.metadata.get("iteration", 0)
                     tool_events.append(
                         {
                             "type": "tool_call",
@@ -271,9 +352,13 @@ class AgentService:
                             "action": "tool_call",
                             "content": None,
                             "iteration": iteration,
-                            "timestamp": chunk.data.id
-                            if hasattr(chunk.data, "id")
-                            else None,
+                            "timestamp": chunk.metadata.get("started_at"),
+                            "span_id": chunk.metadata.get("span_id"),
+                            "parent_span_id": chunk.metadata.get("parent_span_id"),
+                            "run_id": run_state.run_id,
+                            "event_type": "tool_call",
+                            "tool_call_id": tool_call.id,
+                            "status": chunk.metadata.get("status", "started"),
                             "tool_calls": [
                                 {
                                     "name": tool_call.name,
@@ -294,10 +379,8 @@ class AgentService:
 
                 elif chunk.type == AgentChunkType.TOOL_RESULT:
                     result = chunk.data
-                    # Calculate iteration number
-                    iteration = len(
-                        [t for t in trace_steps if t.get("action") == "tool_result"]
-                    )
+                    # iteration 由 Agent 写入 chunk.metadata
+                    iteration = chunk.metadata.get("iteration", 0)
                     tool_events.append(
                         {
                             "type": "tool_result",
@@ -315,7 +398,14 @@ class AgentService:
                             "action": "tool_result",
                             "content": result.result,
                             "iteration": iteration,
-                            "timestamp": None,
+                            "timestamp": chunk.metadata.get("started_at"),
+                            "span_id": chunk.metadata.get("span_id"),
+                            "parent_span_id": chunk.metadata.get("parent_span_id"),
+                            "run_id": run_state.run_id,
+                            "event_type": "tool_result",
+                            "tool_call_id": result.tool_call_id,
+                            "status": "success" if result.success else "error",
+                            "duration_ms": chunk.metadata.get("duration_ms"),
                             "tool_calls": [
                                 {
                                     "name": result.name,
@@ -337,10 +427,13 @@ class AgentService:
 
                 elif chunk.type == AgentChunkType.TRACE:
                     trace_step = chunk.data
-                    trace_steps.append(asdict(trace_step))
-                    yield self._format_event("trace", asdict(trace_step))
+                    trace_data = asdict(trace_step)
+                    trace_steps.append(trace_data)
+                    record_trace_step(trace_data, state=run_state)
+                    yield self._format_event("trace", trace_data)
 
                 elif chunk.type == AgentChunkType.ERROR:
+                    run_error = str(chunk.data.get("error", "Agent execution failed"))
                     yield self._format_event("error", chunk.data)
 
                 elif chunk.type == AgentChunkType.DONE:
@@ -372,6 +465,8 @@ class AgentService:
                         "done",
                         {
                             "session_id": actual_session_id,
+                            "trace_id": run_state.trace_id,
+                            "run_id": run_state.run_id,
                             "thinking_duration_ms": thinking_duration_ms,
                             "answer_duration_ms": answer_duration_ms,
                             **chunk.data,
@@ -392,12 +487,14 @@ class AgentService:
                 image_sources = []
                 for img in context.images:
                     if img.get("url"):
-                        image_sources.append({
-                            "type": "image",
-                            "url": img.get("url"),
-                            "display_url": img.get("display_url"),
-                            "thumb_url": img.get("thumb_url"),
-                        })
+                        image_sources.append(
+                            {
+                                "type": "image",
+                                "url": img.get("url"),
+                                "display_url": img.get("display_url"),
+                                "thumb_url": img.get("thumb_url"),
+                            }
+                        )
                 if image_sources:
                     user_trace = image_sources
 
@@ -407,6 +504,7 @@ class AgentService:
                 "user",
                 user_message_content,
                 trace=user_trace,
+                run_id=run_state.run_id,
             )
 
             for event in tool_events:
@@ -430,6 +528,7 @@ class AgentService:
                         "assistant",
                         "",
                         tool_calls=tool_calls,
+                        run_id=run_state.run_id,
                     )
                 elif event.get("type") == "tool_result":
                     if event.get("success"):
@@ -439,13 +538,16 @@ class AgentService:
                             default=str,
                         )
                     else:
-                        result_content = f"Error: {event.get('error') or 'Unknown error'}"
+                        result_content = (
+                            f"Error: {event.get('error') or 'Unknown error'}"
+                        )
                     await self.repository.save_message(
                         actual_session_id,
                         "tool",
                         result_content,
                         tool_call_id=event.get("tool_call_id"),
                         tool_name=event.get("name"),
+                        run_id=run_state.run_id,
                     )
 
             final_thinking_ms = None
@@ -469,20 +571,67 @@ class AgentService:
                 trace=trace_steps if trace_steps else None,
                 thinking_duration_ms=final_thinking_ms,
                 answer_duration_ms=final_answer_ms,
+                run_id=run_state.run_id,
             )
 
-            # 8. 后台压缩上下文
-            asyncio.create_task(
-                self.context_compressor.maybe_compress(
-                    actual_session_id,
-                    self.repository,
-                    user_id,
-                )
-            )
+            if run_error:
+                set_run_error(run_error, state=run_state)
+            else:
+                mark_run_succeeded(run_state)
+            await self._persist_run(run_state)
+            should_compress = True
+
+        except asyncio.CancelledError:
+            if run_state is not None:
+                mark_run_cancelled(run_state)
+                await self._persist_run(run_state)
+            raise
 
         except Exception as e:
-            logger.exception(f"AgentService.chat failed: {e}")
+            if run_state is not None:
+                set_run_error(e, state=run_state)
+                await self._persist_run(run_state)
+            logger.exception(
+                "AgentService.chat failed (trace_id=%s run_id=%s): %s",
+                run_state.trace_id if run_state else trace_id,
+                run_state.run_id if run_state else run_id,
+                e,
+            )
             yield self._format_event("error", {"error": str(e)})
+        finally:
+            if span_token is not None:
+                reset_span_context(span_token)
+            if trace_token is not None:
+                reset_trace_state(trace_token)
+            if should_compress:
+                asyncio.create_task(
+                    self.context_compressor.maybe_compress(
+                        actual_session_id,
+                        self.repository,
+                        user_id,
+                    )
+                )
+
+    async def _persist_run(self, run_state) -> None:
+        """Persist aggregate run data without interrupting the chat response."""
+        try:
+            snapshot = snapshot_trace_state(run_state)
+            if snapshot:
+                await self.repository.upsert_run(snapshot)
+        except Exception as exc:
+            logger.warning(
+                "Failed to persist Agent run (trace_id=%s run_id=%s): %s",
+                run_state.trace_id,
+                run_state.run_id,
+                exc,
+                exc_info=True,
+            )
+
+    async def _with_agent_span(self, chunks):
+        """Give one Agent execution an explicit parent span for nested work."""
+        with span_context():
+            async for chunk in chunks:
+                yield chunk
 
     def _get_agent_or_fallback(self, agent_name: str) -> BaseAgent:
         try:
@@ -509,7 +658,9 @@ class AgentService:
 
             # Check if vision is enabled
             if not vision_provider.is_enabled:
-                logger.warning("Vision provider is not enabled, skipping image analysis")
+                logger.warning(
+                    "Vision provider is not enabled, skipping image analysis"
+                )
                 return None
 
             # Convert images to ImageInput format
@@ -543,6 +694,7 @@ class AgentService:
 
             # Parse JSON response
             import json
+
             try:
                 result = json.loads(result_str)
                 return result
@@ -574,6 +726,30 @@ class AgentService:
         """列出 Sessions。"""
         return await self.repository.list_sessions(
             user_id=user_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    async def get_run(self, run_id: str) -> Optional[dict]:
+        """Fetch one persisted Agent run by its public identifier."""
+        return await self.repository.get_run(run_id)
+
+    async def list_runs(
+        self,
+        *,
+        user_id: str,
+        session_id: Optional[str] = None,
+        experiment_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """List runs scoped to one user for inspection and evaluation."""
+        return await self.repository.list_runs(
+            user_id=user_id,
+            session_id=session_id,
+            experiment_id=experiment_id,
+            status=status,
             limit=limit,
             offset=offset,
         )

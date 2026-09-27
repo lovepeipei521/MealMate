@@ -30,6 +30,7 @@ class AgentChunk:
 
     type: AgentChunkType
     data: Any
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -64,6 +65,17 @@ class TraceStep:
     source: Literal["agent", "subagent"] = "agent"
     subagent_name: str | None = None
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    span_id: str | None = None
+    parent_span_id: str | None = None
+    run_id: str | None = None
+    event_type: str | None = None
+    tool_call_id: str | None = None
+    status: str | None = None
+    started_at: str | None = None
+    duration_ms: int | None = None
+    error_type: str | None = None
+    arguments: dict[str, Any] | None = None
+    result: Any = None
 
 
 class ToolResult(BaseModel):
@@ -72,6 +84,7 @@ class ToolResult(BaseModel):
     success: bool
     data: Any = None
     error: str | None = None
+
 
 @dataclass
 class AgentContext:

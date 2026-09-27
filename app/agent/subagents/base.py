@@ -8,6 +8,7 @@ Subagent 是专业化的子代理，可以被主 Agent 作为 Tool 调用。
 
 import json
 import logging
+from datetime import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
@@ -128,6 +129,26 @@ class BaseSubagent(ABC):
         background: Optional[str] = None,
         event_handler: Optional[Callable[[TraceStep], Awaitable[None]]] = None,
     ) -> ToolResult:
+        from app.agent.tracing import record_subagent_call, span_context
+
+        with span_context() as subagent_span_id:
+            record_subagent_call()
+            return await self._run_with_tools(
+                task,
+                user_id=user_id,
+                background=background,
+                event_handler=event_handler,
+                subagent_span_id=subagent_span_id,
+            )
+
+    async def _run_with_tools(
+        self,
+        task: str,
+        user_id: Optional[str] = None,
+        background: Optional[str] = None,
+        event_handler: Optional[Callable[[TraceStep], Awaitable[None]]] = None,
+        subagent_span_id: str = "",
+    ) -> ToolResult:
         """
         使用工具执行任务的通用实现。
 
@@ -143,6 +164,15 @@ class BaseSubagent(ABC):
         """
         from app.llm.provider import LLMProvider
         from app.llm.context import llm_context
+        from app.agent.tracing import (
+            get_current_parent_span_id,
+            get_current_trace_ids,
+            new_span_id,
+            record_iteration,
+            record_tool_call,
+            record_tool_result,
+            span_context,
+        )
         from app.config import settings
 
         provider = LLMProvider(settings.llm)
@@ -161,9 +191,7 @@ class BaseSubagent(ABC):
 
         # 获取 Tool schemas
         tool_schemas = (
-            AgentHub.get_tool_schemas(self.tools, user_id=user_id)
-            if self.tools
-            else []
+            AgentHub.get_tool_schemas(self.tools, user_id=user_id) if self.tools else []
         )
 
         # 创建 Tool 执行器
@@ -175,20 +203,37 @@ class BaseSubagent(ABC):
 
         # ReAct 循环
         for iteration in range(self.max_iterations):
+            record_iteration(iteration)
             try:
-                with llm_context(f"subagent:{self.name}", user_id, None):
-                    if tool_schemas:
-                        response = await invoker.ainvoke_with_tools(
-                            messages, tool_schemas
-                        )
-                    else:
-                        response = await invoker.ainvoke(messages)
+                with span_context() as llm_span_id:
+                    trace_id, run_id = get_current_trace_ids()
+                    llm_parent_span_id = get_current_parent_span_id()
+                    with llm_context(
+                        f"subagent:{self.name}",
+                        user_id,
+                        None,
+                        trace_id=trace_id,
+                        run_id=run_id,
+                        span_id=llm_span_id,
+                        parent_span_id=llm_parent_span_id,
+                    ):
+                        if tool_schemas:
+                            response = await invoker.ainvoke_with_tools(
+                                messages, tool_schemas
+                            )
+                        else:
+                            response = await invoker.ainvoke(messages)
 
                 # 检查是否有 Tool 调用
                 tool_calls = self._extract_tool_calls(response)
 
                 if tool_calls and tool_executor:
+                    tool_results = []
                     for tc in tool_calls:
+                        tool_span_id = new_span_id()
+                        parent_span_id = subagent_span_id
+                        started_at = datetime.utcnow()
+                        record_tool_call(tc["name"])
                         await self._emit_event(
                             event_handler,
                             TraceStep(
@@ -199,14 +244,34 @@ class BaseSubagent(ABC):
                                 ],
                                 source="subagent",
                                 subagent_name=self.name,
+                                span_id=tool_span_id,
+                                parent_span_id=parent_span_id,
+                                run_id=run_id,
+                                event_type="tool_call",
+                                tool_call_id=tc["id"],
+                                status="started",
+                                started_at=started_at.isoformat(),
+                                arguments=tc["arguments"],
                             ),
                         )
-                    # 执行 Tool 调用
-                    tool_results = []
-                    for tc in tool_calls:
-                        result = await tool_executor.execute(
-                            tc["name"], tc["arguments"]
+                        with span_context(tool_span_id):
+                            tool_trace_id, tool_run_id = get_current_trace_ids()
+                            with llm_context(
+                                f"subagent:{self.name}:tool:{tc['name']}",
+                                user_id,
+                                None,
+                                trace_id=tool_trace_id,
+                                run_id=tool_run_id,
+                                span_id=tool_span_id,
+                                parent_span_id=get_current_parent_span_id(),
+                            ):
+                                result = await tool_executor.execute(
+                                    tc["name"], tc["arguments"]
+                                )
+                        duration_ms = int(
+                            (datetime.utcnow() - started_at).total_seconds() * 1000
                         )
+                        record_tool_result(result.success)
                         await self._emit_event(
                             event_handler,
                             TraceStep(
@@ -217,15 +282,24 @@ class BaseSubagent(ABC):
                                 tool_calls=[{"name": tc["name"], "arguments": {}}],
                                 source="subagent",
                                 subagent_name=self.name,
+                                span_id=tool_span_id,
+                                parent_span_id=parent_span_id,
+                                run_id=run_id,
+                                event_type="tool_result",
+                                tool_call_id=tc["id"],
+                                status="success" if result.success else "error",
+                                started_at=started_at.isoformat(),
+                                duration_ms=duration_ms,
+                                result=result.data,
                             ),
                         )
                         tool_results.append(
                             {
                                 "tool_call_id": tc["id"],
                                 "name": tc["name"],
-                                "result": result.data
-                                if result.success
-                                else result.error,
+                                "result": (
+                                    result.data if result.success else result.error
+                                ),
                                 "success": result.success,
                             }
                         )
@@ -245,6 +319,11 @@ class BaseSubagent(ABC):
                             content=content,
                             source="subagent",
                             subagent_name=self.name,
+                            span_id=subagent_span_id,
+                            parent_span_id=get_current_parent_span_id(),
+                            run_id=run_id,
+                            event_type="subagent_output",
+                            status="success",
                         ),
                     )
                     return ToolResult(
@@ -267,6 +346,12 @@ class BaseSubagent(ABC):
                         error=str(e),
                         source="subagent",
                         subagent_name=self.name,
+                        span_id=subagent_span_id,
+                        parent_span_id=get_current_parent_span_id(),
+                        run_id=run_id,
+                        event_type="subagent_error",
+                        status="error",
+                        error_type=type(e).__name__,
                     ),
                 )
                 return ToolResult(
