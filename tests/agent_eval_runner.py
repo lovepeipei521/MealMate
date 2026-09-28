@@ -984,7 +984,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         print("\n" + "=" * 72)
         print("MealMate Agent 评测对比结果")
         print("=" * 72)
-        print(f"数据集: {dataset} | 样本数: {len(cases)} | suite: {args.suite}")
+        print(f"数据集: {dataset} | 评测用例数: {len(cases)} | suite: {args.suite}")
+        print(
+            "实际请求记录: "
+            f"baseline={summaries['baseline']['records']} | "
+            f"optimized={summaries['optimized']['records']}"
+        )
         print("优化项: 工具路由、上下文约束、工具失败处理、上下文压缩策略")
         print("差值定义: optimized - baseline")
         print("-" * 72)
