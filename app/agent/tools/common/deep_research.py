@@ -60,7 +60,19 @@ class DeepResearchTool(BaseTool):
                 )
 
             provider = str(config.provider or "tavily").strip().lower()
-            effort = str(research_effort or config.research_effort or "standard").strip().lower()
+            requested_effort = str(research_effort or "standard").strip().lower()
+            configured_effort = str(config.research_effort or "").strip().lower()
+            allowed_efforts = {"lite", "standard", "deep", "exhaustive"}
+
+            # The config is the account-level research policy. This prevents
+            # an LLM tool call such as research_effort="deep" from silently
+            # selecting Tavily's more expensive pro model when the deployment
+            # is configured for standard research.
+            effort = (
+                configured_effort
+                if configured_effort in allowed_efforts
+                else requested_effort
+            )
 
             if provider == "tavily":
                 if not config.api_key:

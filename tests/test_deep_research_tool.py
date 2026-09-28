@@ -31,6 +31,7 @@ async def test_deep_research_tool_uses_tavily_provider(monkeypatch):
     monkeypatch.setattr(settings.deep_research, "provider", "tavily")
     monkeypatch.setattr(settings.deep_research, "api_key", "tvly-test-key")
     monkeypatch.setattr(settings.deep_research, "model", "pro")
+    monkeypatch.setattr(settings.deep_research, "research_effort", "standard")
     monkeypatch.setattr(settings.deep_research, "timeout_seconds", 120)
     monkeypatch.setattr(settings.deep_research, "poll_interval_seconds", 1.5)
     monkeypatch.setattr(tavily_module, "get_tavily_research_client", fake_get_client)
@@ -43,7 +44,7 @@ async def test_deep_research_tool_uses_tavily_provider(monkeypatch):
     assert result.success is True
     assert result.data["provider"] == "tavily"
     assert result.data["content"] == "# Report"
-    assert fake_client.calls == [("分析减脂饮食", "deep")]
+    assert fake_client.calls == [("分析减脂饮食", "standard")]
     assert captured_init == {
         "api_key": "tvly-test-key",
         "model": "pro",
