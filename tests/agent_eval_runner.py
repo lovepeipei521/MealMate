@@ -457,6 +457,88 @@ def load_cases(path: Path, categories: set[str]) -> list[dict[str, Any]]:
     return cases
 
 
+def evaluation_case_key(case_id: str, repeat_index: int) -> tuple[str, int]:
+    """Identify one dataset case repeat independently of its conversation turns."""
+    return case_id, repeat_index
+
+
+def load_result_records(path: Path) -> dict[tuple[str, int], list[dict[str, Any]]]:
+    """Load existing raw records grouped by case and repeat.
+
+    A malformed trailing line is ignored so an interrupted write does not make
+    the whole evaluation impossible to resume.
+    """
+    grouped: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
+    if not path.exists():
+        return grouped
+
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                print(
+                    f"[WARN] 忽略损坏的评测记录: {path}:{line_number}",
+                    flush=True,
+                )
+                continue
+            if not isinstance(record, dict):
+                continue
+            case_id = record.get("case_id")
+            repeat_index = record.get("repeat_index")
+            if not isinstance(case_id, str) or not isinstance(repeat_index, int):
+                continue
+            grouped[evaluation_case_key(case_id, repeat_index)].append(record)
+    return grouped
+
+
+def expected_record_count(case: dict[str, Any]) -> int:
+    """Return the number of persisted records required for one case run."""
+    return len(AgentEvaluationRunner.materialize_turns(case))
+
+
+def is_resumable_case(
+    records: list[dict[str, Any]],
+    case: dict[str, Any],
+    *,
+    include_network: bool,
+    evaluation_profile: str,
+) -> bool:
+    """Return whether an existing case result can be reused safely."""
+    if case.get("requires_network") and not include_network:
+        return len(records) == 1 and all(
+            record.get("status") == "skipped" for record in records
+        )
+
+    if len(records) != expected_record_count(case):
+        return False
+    if any(record.get("evaluation_profile") not in (None, evaluation_profile) for record in records):
+        return False
+    if any(record.get("case") != case for record in records):
+        return False
+
+    # A completed case can still be a negative evaluation result. Resuming is
+    # based on execution completeness, not on whether the case passed.
+    return all(record.get("status") == "completed" for record in records)
+
+
+def write_result_records(
+    path: Path,
+    grouped: dict[tuple[str, int], list[dict[str, Any]]],
+    ordered_keys: list[tuple[str, int]],
+) -> None:
+    """Atomically persist all currently available raw records."""
+    temporary_path = path.with_name(f".{path.name}.tmp")
+    with temporary_path.open("w", encoding="utf-8", newline="\n") as handle:
+        for key in ordered_keys:
+            for record in grouped.get(key, []):
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        handle.flush()
+    temporary_path.replace(path)
+
+
 def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
@@ -694,6 +776,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--include-network", action="store_true")
     parser.add_argument("--timeout", type=float, default=240.0)
     parser.add_argument("--output", default="tests/evaluation_results")
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="ignore existing raw result files and rerun every selected case",
+    )
     parser.add_argument("--verbose", action="store_true")
     return parser
 
@@ -744,6 +831,24 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     def run_profile(profile: str, experiment_id: str) -> tuple[dict[str, Any], Path]:
         profile_config_hash = f"{base_config_hash}:{profile}"
+        stem = experiment_id.replace("/", "_").replace("\\", "_")
+        result_path = output_dir / f"{stem}.jsonl"
+        summary_path = output_dir / f"{stem}.summary.json"
+
+        ordered_keys = [
+            evaluation_case_key(case["case_id"], repeat_index)
+            for case in cases
+            for repeat_index in range(args.repeat)
+        ]
+        existing_records = (
+            {}
+            if args.no_resume
+            else load_result_records(result_path)
+        )
+        persisted_records: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        resumed_count = 0
+        new_count = 0
+
         runner = AgentEvaluationRunner(
             base_url=args.base_url,
             api_prefix=args.api_prefix,
@@ -756,16 +861,50 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             evaluation_profile=profile,
         )
         try:
-            records = runner.run(cases, args.repeat)
+            total = len(ordered_keys)
+            for position, (case, repeat_index) in enumerate(
+                (
+                    (case, repeat_index)
+                    for case in cases
+                    for repeat_index in range(args.repeat)
+                ),
+                start=1,
+            ):
+                key = evaluation_case_key(case["case_id"], repeat_index)
+                previous = existing_records.get(key, [])
+                if is_resumable_case(
+                    previous,
+                    case,
+                    include_network=args.include_network,
+                    evaluation_profile=profile,
+                ):
+                    persisted_records[key] = previous
+                    resumed_count += 1
+                    print(
+                        f"[{position}/{total}] {case['case_id']} "
+                        f"(已完成，跳过)",
+                        flush=True,
+                    )
+                    continue
+
+                new_count += 1
+                print(f"[{position}/{total}] {case['case_id']}", flush=True)
+                persisted_records[key] = runner.run_case(case, repeat_index)
+
+                # Persist after every complete case. If the process is
+                # interrupted during a later case, earlier cases remain usable.
+                write_result_records(result_path, persisted_records, ordered_keys)
         finally:
             runner.close()
 
-        stem = experiment_id.replace("/", "_").replace("\\", "_")
-        result_path = output_dir / f"{stem}.jsonl"
-        summary_path = output_dir / f"{stem}.summary.json"
-        with result_path.open("w", encoding="utf-8", newline="\n") as handle:
-            for record in records:
-                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        # Also rewrite once at the end to normalize ordering and include any
+        # records loaded from a prior run.
+        write_result_records(result_path, persisted_records, ordered_keys)
+        records = [
+            record
+            for key in ordered_keys
+            for record in persisted_records.get(key, [])
+        ]
 
         by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for record in records:
@@ -792,6 +931,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             "selected_categories": sorted(categories),
             "selected_cases": len(cases),
             "records": len(records),
+            "resumed_cases": resumed_count,
+            "new_cases": new_count,
             "status_counts": dict(Counter(record.get("status") for record in records)),
             "agent_metrics": agent_metrics,
             "answer_non_empty_rate": (

@@ -78,6 +78,24 @@ improvement: the optimized profile changes Agent routing and failure handling,
 not the compression algorithm. Token totals are available as a usage proxy;
 actual money cost requires a model price table, which is not configured yet.
 
+The runner supports checkpointed resume by default. After each complete case,
+the corresponding raw JSONL file is atomically updated. If the process stops,
+rerun the same command and completed cases are skipped; an incomplete case is
+rerun as a whole. Baseline and optimized profiles resume independently. Use
+`--no-resume` only when every selected case must be executed again from the
+beginning:
+
+```bash
+python -m tests.agent_eval_runner \
+  --base-url http://127.0.0.1:8000 \
+  --username YOUR_TEST_USER \
+  --suite agent_core \
+  --include-network \
+  --config-hash auto \
+  --no-resume \
+  --output tests/evaluation_results
+```
+
 To run only one profile, provide an experiment ID:
 
 ```bash
