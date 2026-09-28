@@ -18,6 +18,7 @@ from app.agent.prompts import (
     COMPRESS_SYSTEM_PROMPT,
     COMPRESS_USER_PROMPT_TEMPLATE,
 )
+from app.agent.evaluation_profiles import get_evaluation_prompt_suffix
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,8 @@ class AgentContextBuilder:
 
         # 1. System prompt（含用户画像和指令）
         system_content = context.system_prompt
+
+        system_content += get_evaluation_prompt_suffix()
 
         if context.user_id:
             system_content += USER_ID_PROMPT_TEMPLATE.format(user_id=context.user_id)

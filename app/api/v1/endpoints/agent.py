@@ -136,6 +136,7 @@ class AgentChatRequest(BaseModel):
     dataset_case_id: Optional[str] = Field(default=None, max_length=128)
     repeat_index: Optional[int] = Field(default=None, ge=0)
     config_hash: Optional[str] = Field(default=None, max_length=128)
+    evaluation_profile: Optional[Literal["baseline", "optimized"]] = None
 
     @field_validator("message")
     @classmethod
@@ -366,6 +367,12 @@ async def agent_chat(request: AgentChatRequest, http_request: Request):
     # ==========================================================================
     secured_message = await check_message_security(request.message, http_request)
 
+    if request.evaluation_profile and request.source != "evaluation":
+        raise HTTPException(
+            status_code=400,
+            detail="evaluation_profile 只能用于 evaluation 请求",
+        )
+
     # Convert images to dict format for service
     images_data = None
     if request.images:
@@ -423,6 +430,7 @@ async def agent_chat(request: AgentChatRequest, http_request: Request):
                 dataset_case_id=request.dataset_case_id,
                 repeat_index=request.repeat_index,
                 config_hash=request.config_hash,
+                evaluation_profile=request.evaluation_profile,
             ):
                 await queue.put(chunk)
         except Exception as e:
@@ -490,6 +498,7 @@ async def agent_chat(request: AgentChatRequest, http_request: Request):
                 dataset_case_id=request.dataset_case_id,
                 repeat_index=request.repeat_index,
                 config_hash=request.config_hash,
+                evaluation_profile=request.evaluation_profile,
             ):
                 # Parse SSE event
                 if event.startswith("data: "):

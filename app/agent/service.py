@@ -36,6 +36,10 @@ from app.agent.tracing import (
     span_context,
     snapshot_trace_state,
 )
+from app.agent.evaluation_profiles import (
+    reset_evaluation_profile,
+    set_evaluation_profile,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +163,7 @@ class AgentService:
         dataset_case_id: Optional[str] = None,
         repeat_index: Optional[int] = None,
         config_hash: Optional[str] = None,
+        evaluation_profile: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """
         主入口：与 Agent 对话。
@@ -190,6 +195,9 @@ class AgentService:
         span_token = None
         should_compress = False
         run_error: Optional[str] = None
+        evaluation_profile_token = set_evaluation_profile(
+            evaluation_profile if source == "evaluation" else None
+        )
 
         try:
             # 1. 获取或创建 Session（不再传入 agent_name）
@@ -611,6 +619,7 @@ class AgentService:
                         user_id,
                     )
                 )
+            reset_evaluation_profile(evaluation_profile_token)
 
     async def _persist_run(self, run_state) -> None:
         """Persist aggregate run data without interrupting the chat response."""

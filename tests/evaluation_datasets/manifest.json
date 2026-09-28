@@ -1,0 +1,24 @@
+{
+  "dataset_version": "agent_eval_v1",
+  "case_count": 280,
+  "categories": {
+    "cache_ablation": 30,
+    "context_memory": 40,
+    "online_research": 10,
+    "rag": 100,
+    "robustness": 30,
+    "tool_selection": 70
+  },
+  "generated_by": "scripts/generate_agent_eval_dataset.py",
+  "additional_files": {
+    "agent_bad_cases": "agent_bad_cases_v1.jsonl"
+  },
+  "gold_label_policy": {
+    "rag": "keyword and metadata gold; map document_ids after ingestion",
+    "tool_selection": "expected and forbidden tool names",
+    "context_memory": "multi-turn facts and constraints",
+    "cache_ablation": "request sequences with expected cache paths",
+    "robustness": "failure and refusal behavior rubrics",
+    "online_research": "provider, source, and failure behavior gold"
+  }
+}

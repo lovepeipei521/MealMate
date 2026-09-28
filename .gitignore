@@ -5,6 +5,8 @@ venv/
 
 # Python cache
 __pycache__/
+.pytest_cache/
+tests/evaluation_results/
 *.py[cod]
 *$py.class
 
