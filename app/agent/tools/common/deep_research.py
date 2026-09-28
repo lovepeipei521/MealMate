@@ -110,6 +110,11 @@ class DeepResearchTool(BaseTool):
             )
 
             if "error" in response:
+                logger.error(
+                    "Deep research provider failed: request_id=%s error=%s",
+                    response.get("request_id"),
+                    response["error"],
+                )
                 return ToolResult(success=False, error=response["error"])
 
             content = response.get("content", "")

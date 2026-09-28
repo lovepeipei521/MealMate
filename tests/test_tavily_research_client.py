@@ -1,6 +1,7 @@
 import json
 
 import pytest
+import requests
 
 from app.integrations.tavily import client as client_module
 from app.integrations.tavily.client import TavilyResearchClient
@@ -87,6 +88,7 @@ def test_pending_research_is_polled_until_completed(monkeypatch):
                 "snippet": "",
             }
         ],
+        "request_id": "req-1",
     }
     assert post_calls[0]["url"] == client_module.TAVILY_RESEARCH_URL
     assert post_calls[0]["headers"]["Authorization"] == "Bearer test-key"
@@ -137,6 +139,83 @@ def test_completed_content_and_sources_are_normalized(monkeypatch):
             "snippet": "",
         },
     ]
+
+
+def test_poll_retries_transient_network_error(monkeypatch):
+    client = TavilyResearchClient(
+        api_key="test-key",
+        poll_interval_seconds=0.1,
+        timeout_seconds=5,
+    )
+    responses = iter(
+        [
+            requests.ConnectionError("temporary reset"),
+            FakeResponse(
+                200,
+                {"status": "completed", "content": "# Recovered report"},
+            ),
+        ]
+    )
+    calls = []
+
+    def fake_get(*args, **kwargs):
+        calls.append(kwargs)
+        response = next(responses)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    monkeypatch.setattr(client._session, "get", fake_get)
+    monkeypatch.setattr(client_module.time, "sleep", lambda _seconds: None)
+
+    result = client._poll("req-network-retry")
+
+    assert result["content"] == "# Recovered report"
+    assert result["request_id"] == "req-network-retry"
+    assert len(calls) == 2
+
+
+def test_poll_retries_retryable_http_error(monkeypatch):
+    client = TavilyResearchClient(
+        api_key="test-key",
+        poll_interval_seconds=0.1,
+        timeout_seconds=5,
+    )
+    responses = iter(
+        [
+            FakeResponse(503, {"detail": "temporarily unavailable"}),
+            FakeResponse(
+                200,
+                {"status": "completed", "content": "# Recovered report"},
+            ),
+        ]
+    )
+    monkeypatch.setattr(client._session, "get", lambda *args, **kwargs: next(responses))
+    monkeypatch.setattr(client_module.time, "sleep", lambda _seconds: None)
+
+    result = client._poll("req-http-retry")
+
+    assert result["content"] == "# Recovered report"
+    assert result["request_id"] == "req-http-retry"
+
+
+def test_failed_research_preserves_provider_error_and_request_id(monkeypatch):
+    client = TavilyResearchClient(api_key="test-key")
+    responses = [
+        FakeResponse(202, {"request_id": "req-failed", "status": "pending"}),
+        FakeResponse(
+            200,
+            {"status": "failed", "error": "provider quota exceeded"},
+        ),
+    ]
+
+    monkeypatch.setattr(client._session, "post", lambda *args, **kwargs: responses[0])
+    monkeypatch.setattr(client._session, "get", lambda *args, **kwargs: responses[1])
+
+    result = client.research("测试失败")
+
+    assert "provider quota exceeded" in result["error"]
+    assert result["request_id"] == "req-failed"
 
 
 def test_failed_research_status_returns_error(monkeypatch):

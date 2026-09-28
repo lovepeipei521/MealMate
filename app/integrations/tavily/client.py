@@ -18,6 +18,8 @@ import requests
 logger = logging.getLogger(__name__)
 
 TAVILY_RESEARCH_URL = "https://api.tavily.com/research"
+RETRYABLE_POLL_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
+MAX_POLL_INTERVAL_SECONDS = 10.0
 
 
 class TavilyResearchClient:
@@ -63,7 +65,10 @@ class TavilyResearchClient:
         return f": {detail[:500]}" if detail else ""
 
     def _request_error(
-        self, response: requests.Response, operation: str = "Research"
+        self,
+        response: requests.Response,
+        operation: str = "Research",
+        request_id: Optional[str] = None,
     ) -> dict:
         """Build a consistent error payload."""
         detail = self._error_detail(response)
@@ -79,11 +84,13 @@ class TavilyResearchClient:
         else:
             reason = "request failed"
 
+        request_suffix = f" (request_id={request_id})" if request_id else ""
         return {
             "error": (
                 f"Tavily {operation} {reason} "
-                f"(Status {response.status_code}){detail}"
-            )
+                f"(Status {response.status_code}){detail}{request_suffix}"
+            ),
+            "request_id": request_id,
         }
 
     @staticmethod
@@ -160,54 +167,173 @@ class TavilyResearchClient:
             return "pro"
         return "auto"
 
-    def _completed_result(self, payload: dict) -> dict:
+    def _completed_result(
+        self, payload: dict, request_id: Optional[str] = None
+    ) -> dict:
         content = self._format_content(payload.get("content"))
         if not content:
-            return {"error": "Tavily Research completed without report content"}
+            return {
+                "error": "Tavily Research completed without report content",
+                "request_id": request_id,
+            }
 
-        return {
+        result = {
             "content": content,
             "sources": self._format_sources(payload.get("sources")),
         }
+        if request_id:
+            result["request_id"] = request_id
+        return result
+
+    @staticmethod
+    def _retry_after_seconds(response: requests.Response) -> Optional[float]:
+        """Parse a numeric Retry-After header when the provider supplies one."""
+        value = getattr(response, "headers", {}).get("Retry-After")
+        if not value:
+            return None
+        try:
+            return max(0.0, float(value))
+        except (TypeError, ValueError):
+            return None
+
+    def _sleep_before_poll(
+        self,
+        delay_seconds: float,
+        deadline: float,
+        *,
+        retry_after: Optional[float] = None,
+    ) -> bool:
+        """Sleep without exceeding the overall research deadline."""
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        delay = retry_after if retry_after is not None else delay_seconds
+        time.sleep(min(max(0.0, delay), remaining))
+        return True
 
     def _poll(self, request_id: str) -> dict:
-        """Poll a Tavily research task until it completes, fails, or times out."""
+        """Poll a Tavily task with retry and backoff until it finishes."""
         deadline = time.monotonic() + self.timeout_seconds
         url = f"{TAVILY_RESEARCH_URL}/{request_id}"
+        poll_delay = self.poll_interval_seconds
+        last_transient_error: Optional[str] = None
+        poll_attempt = 0
 
         while time.monotonic() < deadline:
+            poll_attempt += 1
             try:
                 response = self._session.get(
                     url,
                     headers=self._get_headers(),
                     timeout=30,
                 )
+            except requests.RequestException as exc:
+                last_transient_error = str(exc) or type(exc).__name__
+                logger.warning(
+                    "Tavily Research polling request failed; retrying "
+                    "request_id=%s attempt=%s error=%s",
+                    request_id,
+                    poll_attempt,
+                    last_transient_error,
+                )
+                if not self._sleep_before_poll(poll_delay, deadline):
+                    break
+                poll_delay = min(poll_delay * 2, MAX_POLL_INTERVAL_SECONDS)
+                continue
             except Exception as exc:
-                return {"error": f"Tavily Research polling failed: {exc}"}
+                # Keep unexpected client/adapter errors visible, but treat them
+                # as transient here so one polling failure does not discard the
+                # already-created research task.
+                last_transient_error = f"{type(exc).__name__}: {exc}"
+                logger.warning(
+                    "Unexpected Tavily polling error; retrying "
+                    "request_id=%s attempt=%s error=%s",
+                    request_id,
+                    poll_attempt,
+                    last_transient_error,
+                )
+                if not self._sleep_before_poll(poll_delay, deadline):
+                    break
+                poll_delay = min(poll_delay * 2, MAX_POLL_INTERVAL_SECONDS)
+                continue
+
+            if response.status_code in RETRYABLE_POLL_STATUS_CODES:
+                last_transient_error = (
+                    f"HTTP {response.status_code}{self._error_detail(response)}"
+                )
+                logger.warning(
+                    "Tavily Research polling returned a retryable response; "
+                    "retrying request_id=%s attempt=%s error=%s",
+                    request_id,
+                    poll_attempt,
+                    last_transient_error,
+                )
+                if not self._sleep_before_poll(
+                    poll_delay,
+                    deadline,
+                    retry_after=self._retry_after_seconds(response),
+                ):
+                    break
+                poll_delay = min(poll_delay * 2, MAX_POLL_INTERVAL_SECONDS)
+                continue
 
             if response.status_code not in (200, 202):
-                return self._request_error(response, operation="Research polling")
+                return self._request_error(
+                    response,
+                    operation="Research polling",
+                    request_id=request_id,
+                )
 
             payload, error = self._parse_json(response, "Research polling")
             if error:
-                return error
+                last_transient_error = error.get("error")
+                logger.warning(
+                    "Tavily Research polling returned invalid JSON; retrying "
+                    "request_id=%s attempt=%s error=%s",
+                    request_id,
+                    poll_attempt,
+                    last_transient_error,
+                )
+                if not self._sleep_before_poll(poll_delay, deadline):
+                    break
+                poll_delay = min(poll_delay * 2, MAX_POLL_INTERVAL_SECONDS)
+                continue
 
             status = str(payload.get("status", "")).strip().lower()
             if status == "completed":
-                return self._completed_result(payload)
+                return self._completed_result(payload, request_id=request_id)
             if status == "failed":
-                return {"error": "Tavily Research task failed"}
+                detail = payload.get("error") or payload.get("detail") or "unknown provider error"
+                if isinstance(detail, dict):
+                    detail = detail.get("error") or detail
+                return {
+                    "error": (
+                        f"Tavily Research task failed: {detail} "
+                        f"(request_id={request_id})"
+                    ),
+                    "request_id": request_id,
+                }
+            if status in {"cancelled", "canceled"}:
+                return {
+                    "error": f"Tavily Research task was cancelled (request_id={request_id})",
+                    "request_id": request_id,
+                }
 
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
+            if not self._sleep_before_poll(poll_delay, deadline):
                 break
-            time.sleep(min(self.poll_interval_seconds, remaining))
+            poll_delay = min(poll_delay * 2, MAX_POLL_INTERVAL_SECONDS)
 
+        detail = (
+            f"; last polling error: {last_transient_error}"
+            if last_transient_error
+            else ""
+        )
         return {
             "error": (
                 f"Tavily Research timed out after {self.timeout_seconds} seconds "
-                f"(request_id={request_id})"
-            )
+                f"(request_id={request_id}){detail}"
+            ),
+            "request_id": request_id,
         }
 
     def research(self, query: str, research_effort: str = "standard") -> dict:
@@ -253,14 +379,21 @@ class TavilyResearchClient:
 
         status = str(data.get("status", "")).strip().lower()
         if status == "completed":
-            return self._completed_result(data)
+            return self._completed_result(data, request_id=data.get("request_id"))
         if status == "failed":
-            return {"error": "Tavily Research task failed"}
+            detail = data.get("error") or data.get("detail") or "unknown provider error"
+            if isinstance(detail, dict):
+                detail = detail.get("error") or detail
+            request_id = data.get("request_id")
+            return {
+                "error": f"Tavily Research task failed: {detail}",
+                "request_id": request_id,
+            }
 
         request_id = data.get("request_id")
         if not isinstance(request_id, str) or not request_id.strip():
             if data.get("content") is not None:
-                return self._completed_result(data)
+                return self._completed_result(data, request_id=data.get("request_id"))
             return {"error": "Tavily Research did not return a request_id"}
 
         return self._poll(request_id.strip())
