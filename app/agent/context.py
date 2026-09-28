@@ -6,6 +6,7 @@ Agent 上下文组装
 
 import json
 import logging
+import time
 from typing import Optional
 
 from app.agent.types import AgentContext, AgentConfig
@@ -18,7 +19,10 @@ from app.agent.prompts import (
     COMPRESS_SYSTEM_PROMPT,
     COMPRESS_USER_PROMPT_TEMPLATE,
 )
-from app.agent.evaluation_profiles import get_evaluation_prompt_suffix
+from app.agent.evaluation_profiles import (
+    get_compression_strategy,
+    get_evaluation_prompt_suffix,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,10 +94,15 @@ class AgentContextBuilder:
         ) = await self.repository.get_compressed_summary(session_id)
 
         # 3. 获取近期消息（跳过已压缩的）
+        _, profile_recent_limit, profile_name, _ = get_compression_strategy()
         recent_messages = await self.repository.get_recent_messages(
             session_id,
             skip=compressed_count,
-            limit=self.recent_messages_limit,
+            limit=(
+                profile_recent_limit
+                if profile_name != "default"
+                else self.recent_messages_limit
+            ),
         )
 
         # 4. 获取可用 Tool schemas
@@ -296,6 +305,10 @@ class AgentContextCompressor:
         session_id: str,
         repository: AgentRepository,
         user_id: Optional[str] = None,
+        *,
+        run_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        evaluation_profile: Optional[str] = None,
     ) -> bool:
         """
         检查并执行压缩（如需要）。
@@ -311,62 +324,153 @@ class AgentContextCompressor:
         from app.llm.provider import LLMProvider
         from app.llm.context import llm_context
         from app.config import settings
+        from app.agent.tracing import (
+            create_trace_state,
+            reset_trace_state,
+            set_trace_state,
+            span_context,
+        )
 
         provider = LLMProvider(settings.llm)
 
-        # 获取当前状态
-        total_count = await repository.get_message_count(session_id)
-        compressed_summary, compressed_count = await repository.get_compressed_summary(
-            session_id
+        # Evaluation profiles override the defaults only for evaluation calls.
+        # Online traffic keeps the original 10/20 message policy.
+        profile_threshold = self.compression_threshold
+        profile_recent_limit = self.recent_messages_limit
+        profile_name = evaluation_profile or "default"
+        prompt_suffix = ""
+        if evaluation_profile:
+            from app.agent.evaluation_profiles import PROFILES
+
+            profile = PROFILES.get(evaluation_profile)
+            if profile:
+                profile_threshold = profile.compression_threshold
+                profile_recent_limit = profile.recent_messages_limit
+                prompt_suffix = profile.compression_prompt_suffix
+
+        started = time.perf_counter()
+        compression_state = create_trace_state(
+            trace_id=trace_id,
+            run_id=run_id,
+            user_id=user_id,
+            session_id=session_id,
+            source="compression",
         )
+        compression_token = set_trace_state(compression_state)
+        attempts: list[str] = []
+        fallback_used = False
 
-        uncompressed_count = total_count - compressed_count
+        async def persist_event(event: dict) -> None:
+            if run_id:
+                try:
+                    await repository.append_run_trace(run_id, event)
+                except Exception:
+                    logger.warning(
+                        "Failed to persist compression metrics for run %s",
+                        run_id,
+                        exc_info=True,
+                    )
 
-        # 检查是否需要压缩
-        if uncompressed_count < self.compression_threshold + self.recent_messages_limit:
-            return False
-
-        # 获取需要压缩的消息
-        messages_to_compress = await repository.get_recent_messages(
-            session_id,
-            skip=compressed_count,
-            limit=self.compression_threshold,
-        )
-
-        if not messages_to_compress:
-            return False
-
-        # 构建压缩提示
-        messages_text = "\n".join(
-            [f"{msg['role']}: {msg['content']}" for msg in messages_to_compress]
-        )
-
-        previous_summary = (
-            f"之前的摘要：{compressed_summary}" if compressed_summary else ""
-        )
-        prompt = COMPRESS_USER_PROMPT_TEMPLATE.format(
-            messages_text=messages_text,
-            previous_summary=previous_summary,
-        )
-
-        # 调用 LLM 生成摘要（fast 失败时回退 normal 重试一次）
         try:
+            # 获取当前状态
+            total_count = await repository.get_message_count(session_id)
+            compressed_summary, compressed_count = await repository.get_compressed_summary(
+                session_id
+            )
+
+            uncompressed_count = total_count - compressed_count
+            trigger_threshold = profile_threshold + profile_recent_limit
+
+            # 检查是否需要压缩
+            if uncompressed_count < trigger_threshold:
+                await persist_event(
+                    {
+                        "event_type": "context_compression",
+                        "action": "compression_check",
+                        "status": "skipped",
+                        "run_id": run_id,
+                        "session_id": session_id,
+                        "profile": profile_name,
+                        "triggered": False,
+                        "total_messages": total_count,
+                        "compressed_count_before": compressed_count,
+                        "compressed_count_after": compressed_count,
+                        "uncompressed_count_before": uncompressed_count,
+                        "uncompressed_count_after": uncompressed_count,
+                        "compression_threshold": profile_threshold,
+                        "recent_messages_limit": profile_recent_limit,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                    }
+                )
+                return False
+
+            # 获取需要压缩的消息
+            messages_to_compress = await repository.get_recent_messages(
+                session_id,
+                skip=compressed_count,
+                limit=profile_threshold,
+            )
+
+            if not messages_to_compress:
+                await persist_event(
+                    {
+                        "event_type": "context_compression",
+                        "action": "compression",
+                        "status": "failed",
+                        "run_id": run_id,
+                        "session_id": session_id,
+                        "profile": profile_name,
+                        "triggered": True,
+                        "total_messages": total_count,
+                        "compressed_count_before": compressed_count,
+                        "compressed_count_after": compressed_count,
+                        "uncompressed_count_before": uncompressed_count,
+                        "uncompressed_count_after": uncompressed_count,
+                        "messages_compressed": 0,
+                        "error": "no messages available to compress",
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                    }
+                )
+                return False
+
+            # 构建压缩提示
+            messages_text = "\n".join(
+                [f"{msg['role']}: {msg['content']}" for msg in messages_to_compress]
+            )
+
+            previous_summary = (
+                f"之前的摘要：{compressed_summary}" if compressed_summary else ""
+            )
+            prompt = COMPRESS_USER_PROMPT_TEMPLATE.format(
+                messages_text=messages_text,
+                previous_summary=previous_summary,
+            )
+
             new_summary: Optional[str] = None
 
             for index, llm_type in enumerate(("fast", "normal")):
+                attempts.append(llm_type)
                 try:
                     invoker = provider.create_invoker(llm_type=llm_type)
 
-                    with llm_context("agent:compressor", user_id, session_id):
-                        response = await invoker.ainvoke(
-                            [
-                                {
-                                    "role": "system",
-                                    "content": COMPRESS_SYSTEM_PROMPT,
-                                },
-                                {"role": "user", "content": prompt},
-                            ]
-                        )
+                    with span_context() as compression_span_id:
+                        with llm_context(
+                            "agent:compressor",
+                            user_id,
+                            session_id,
+                            trace_id=compression_state.trace_id,
+                            run_id=compression_state.run_id,
+                            span_id=compression_span_id,
+                        ):
+                            response = await invoker.ainvoke(
+                                [
+                                    {
+                                        "role": "system",
+                                        "content": COMPRESS_SYSTEM_PROMPT + prompt_suffix,
+                                    },
+                                    {"role": "user", "content": prompt},
+                                ]
+                            )
 
                     summary_text = getattr(response, "content", None)
                     if not isinstance(summary_text, str) or not summary_text.strip():
@@ -376,6 +480,7 @@ class AgentContextCompressor:
                     break
                 except Exception:
                     if index == 0:
+                        fallback_used = True
                         logger.warning(
                             "Failed to compress context with fast model; retrying with normal model",
                             exc_info=True,
@@ -386,6 +491,31 @@ class AgentContextCompressor:
                         )
 
             if not new_summary:
+                await persist_event(
+                    {
+                        "event_type": "context_compression",
+                        "action": "compression",
+                        "status": "failed",
+                        "run_id": run_id,
+                        "session_id": session_id,
+                        "profile": profile_name,
+                        "triggered": True,
+                        "total_messages": total_count,
+                        "compressed_count_before": compressed_count,
+                        "compressed_count_after": compressed_count,
+                        "uncompressed_count_before": uncompressed_count,
+                        "uncompressed_count_after": uncompressed_count,
+                        "messages_compressed": 0,
+                        "compression_threshold": profile_threshold,
+                        "recent_messages_limit": profile_recent_limit,
+                        "compression_llm_attempts": attempts,
+                        "fallback_used": fallback_used,
+                        "compression_input_tokens": compression_state.input_tokens,
+                        "compression_output_tokens": compression_state.output_tokens,
+                        "compression_total_tokens": compression_state.total_tokens,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                    }
+                )
                 return False
 
             new_count = compressed_count + len(messages_to_compress)
@@ -401,16 +531,85 @@ class AgentContextCompressor:
                     "Failed to persist compressed summary for session %s",
                     session_id,
                 )
+                await persist_event(
+                    {
+                        "event_type": "context_compression",
+                        "action": "compression",
+                        "status": "failed",
+                        "run_id": run_id,
+                        "session_id": session_id,
+                        "profile": profile_name,
+                        "triggered": True,
+                        "total_messages": total_count,
+                        "compressed_count_before": compressed_count,
+                        "compressed_count_after": compressed_count,
+                        "uncompressed_count_before": uncompressed_count,
+                        "uncompressed_count_after": uncompressed_count,
+                        "messages_compressed": len(messages_to_compress),
+                        "error": "compressed summary persistence failed",
+                        "compression_input_tokens": compression_state.input_tokens,
+                        "compression_output_tokens": compression_state.output_tokens,
+                        "compression_total_tokens": compression_state.total_tokens,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                    }
+                )
                 return False
 
             logger.info(
                 f"Compressed {len(messages_to_compress)} messages for session {session_id}"
             )
+            await persist_event(
+                {
+                    "event_type": "context_compression",
+                    "action": "compression",
+                    "status": "success",
+                    "run_id": run_id,
+                    "session_id": session_id,
+                    "profile": profile_name,
+                    "triggered": True,
+                    "total_messages": total_count,
+                    "compressed_count_before": compressed_count,
+                    "compressed_count_after": new_count,
+                    "uncompressed_count_before": uncompressed_count,
+                    "uncompressed_count_after": total_count - new_count,
+                    "messages_compressed": len(messages_to_compress),
+                    "compression_threshold": profile_threshold,
+                    "recent_messages_limit": profile_recent_limit,
+                    "compression_llm_attempts": attempts,
+                    "fallback_used": fallback_used,
+                    "compression_input_tokens": compression_state.input_tokens,
+                    "compression_output_tokens": compression_state.output_tokens,
+                    "compression_total_tokens": compression_state.total_tokens,
+                    "compression_llm_calls": compression_state.llm_call_count,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                }
+            )
             return True
 
         except Exception as e:
             logger.exception(f"Failed to compress context: {e}")
+            await persist_event(
+                {
+                    "event_type": "context_compression",
+                    "action": "compression",
+                    "status": "failed",
+                    "run_id": run_id,
+                    "session_id": session_id,
+                    "profile": profile_name,
+                    "triggered": True,
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                    "compression_llm_attempts": attempts,
+                    "fallback_used": fallback_used,
+                    "compression_input_tokens": compression_state.input_tokens,
+                    "compression_output_tokens": compression_state.output_tokens,
+                    "compression_total_tokens": compression_state.total_tokens,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                }
+            )
             return False
+        finally:
+            reset_trace_state(compression_token)
 
 
 # 单例

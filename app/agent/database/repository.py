@@ -337,6 +337,22 @@ class AgentRepository:
             )
             return True
 
+    async def append_run_trace(self, run_id: str, step: dict[str, Any]) -> bool:
+        """Append an asynchronously produced trace event to an Agent run."""
+        async with get_session_context() as session:
+            stmt = select(AgentRunModel).where(AgentRunModel.run_id == run_id)
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if not row:
+                return False
+
+            trace = list(row.trace or [])
+            trace.append(step)
+            row.trace = trace
+            row.updated_at = datetime.utcnow()
+            await session.flush()
+            return True
+
     # ==================== Agent Run Operations ====================
 
     async def upsert_run(self, snapshot: dict) -> dict:

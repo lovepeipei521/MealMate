@@ -617,6 +617,9 @@ class AgentService:
                         actual_session_id,
                         self.repository,
                         user_id,
+                        run_id=run_state.run_id if run_state else None,
+                        trace_id=run_state.trace_id if run_state else None,
+                        evaluation_profile=evaluation_profile,
                     )
                 )
             reset_evaluation_profile(evaluation_profile_token)

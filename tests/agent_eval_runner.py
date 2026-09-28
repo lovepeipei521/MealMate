@@ -168,21 +168,73 @@ class AgentEvaluationRunner:
             "latency_ms": round((time.perf_counter() - started) * 1000, 2),
         }
 
-    def get_run(self, run_id: Optional[str]) -> dict[str, Any]:
+    def get_run(
+        self,
+        run_id: Optional[str],
+        *,
+        wait_for_compression: bool = False,
+        compression_timeout: float = 45.0,
+    ) -> dict[str, Any]:
         if not run_id:
             return {}
         last_response: Optional[httpx.Response] = None
-        for attempt in range(3):
+        deadline = time.perf_counter() + (compression_timeout if wait_for_compression else 0)
+        attempt = 0
+        while True:
+            attempt += 1
             response = self.request("GET", f"/agent/run/{run_id}")
             last_response = response
             if response.status_code == 200:
-                return self.json_body(response)
-            if attempt < 2:
-                time.sleep(0.25 * (attempt + 1))
+                detail = self.json_body(response)
+                if not wait_for_compression or self.compression_event(detail):
+                    return detail
+                if time.perf_counter() >= deadline:
+                    return detail
+            elif not wait_for_compression and attempt >= 3:
+                break
+            elif wait_for_compression and time.perf_counter() >= deadline:
+                break
+            time.sleep(min(0.25 * attempt, 2.0))
         return {
             "http_status": last_response.status_code if last_response else None,
             "error": last_response.text[:500] if last_response else "run lookup failed",
         }
+
+    @staticmethod
+    def compression_event(run: dict[str, Any]) -> dict[str, Any] | None:
+        """Return the persisted compression event for one Agent run."""
+        for event in reversed(run.get("trace") or []):
+            if isinstance(event, dict) and event.get("event_type") == "context_compression":
+                return event
+        return None
+
+    @staticmethod
+    def materialize_turns(case: dict[str, Any]) -> list[dict[str, Any]]:
+        """Expand marked memory cases so the async compressor is exercised."""
+        turns = case.get("turns")
+        if not isinstance(turns, list) or not turns:
+            return [{"role": "user", "content": case["question"]}]
+
+        probe = case.get("compression_probe") or {}
+        if not probe.get("run_with_long_history") or len(turns) >= 18:
+            return turns
+
+        # Each turn produces a user and an assistant message. Eighteen turns
+        # cross both profile thresholds while keeping the JSONL dataset compact.
+        prefix = turns[:-1]
+        final_turn = turns[-1]
+        filler_count = max(0, 18 - len(turns))
+        fillers = [
+            {
+                "role": "user",
+                "content": (
+                    f"这是上下文测试中的第 {index} 轮普通交流，请简短确认已经记录，"
+                    "不要新增饮食限制。"
+                ),
+            }
+            for index in range(1, filler_count + 1)
+        ]
+        return prefix + fillers + [final_turn]
 
     @staticmethod
     def deterministic_checks(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
@@ -224,6 +276,15 @@ class AgentEvaluationRunner:
             1 for item in tool_results if item.get("success") is False
         )
         run_status = run.get("status")
+        compression = AgentEvaluationRunner.compression_event(run)
+        is_final_turn = bool(record.get("is_final_turn"))
+        expected_facts = [
+            str(fact) for fact in record.get("case", {}).get("expected_facts") or []
+        ]
+        answer = str(result.get("answer") or "").lower()
+        found_memory_facts = [
+            fact for fact in expected_facts if fact.lower() in answer
+        ]
         return {
             "run_status": run_status,
             "run_succeeded": run_status == "succeeded",
@@ -254,6 +315,44 @@ class AgentEvaluationRunner:
             "total_tokens": run.get("total_tokens"),
             "ttft_ms": run.get("ttft_ms"),
             "duration_ms": run.get("duration_ms") or result.get("latency_ms"),
+            "compression_observed": compression is not None,
+            "compression_triggered": bool(compression and compression.get("triggered")),
+            "compression_succeeded": bool(
+                compression and compression.get("status") == "success"
+            ),
+            "compressed_messages": (
+                compression.get("messages_compressed") if compression else None
+            ),
+            "compression_duration_ms": (
+                compression.get("duration_ms") if compression else None
+            ),
+            "compression_input_tokens": (
+                compression.get("compression_input_tokens") if compression else None
+            ),
+            "compression_output_tokens": (
+                compression.get("compression_output_tokens") if compression else None
+            ),
+            "compression_total_tokens": (
+                compression.get("compression_total_tokens") if compression else None
+            ),
+            "compression_before_uncompressed_messages": (
+                compression.get("uncompressed_count_before") if compression else None
+            ),
+            "compression_after_uncompressed_messages": (
+                compression.get("uncompressed_count_after") if compression else None
+            ),
+            "compression_fallback_used": bool(
+                compression and compression.get("fallback_used")
+            ),
+            "compression_profile": compression.get("profile") if compression else None,
+            "memory_retention_eligible": (
+                record.get("category") == "context_memory"
+                and is_final_turn
+                and bool(expected_facts)
+            ),
+            "memory_fact_coverage": (
+                len(found_memory_facts) / len(expected_facts) if expected_facts else None
+            ),
         }
 
     def should_skip(self, case: dict[str, Any]) -> Optional[str]:
@@ -272,11 +371,10 @@ class AgentEvaluationRunner:
                 "skip_reason": skip_reason,
             }]
 
-        turns = case.get("turns")
-        if not isinstance(turns, list) or not turns:
-            turns = [{"role": "user", "content": case["question"]}]
+        turns = self.materialize_turns(case)
         records: list[dict[str, Any]] = []
         session_id: Optional[str] = None
+        previous_record: Optional[dict[str, Any]] = None
         for turn_index, turn in enumerate(turns):
             question = str(turn.get("content") or turn.get("question") or case["question"])
             result = self.run_chat(
@@ -286,13 +384,25 @@ class AgentEvaluationRunner:
                 session_id=session_id,
             )
             session_id = result.get("session_id") or session_id
-            run_detail = self.get_run(result.get("run_id"))
+            run_detail = self.get_run(
+                result.get("run_id"),
+                wait_for_compression=bool(
+                    (case.get("compression_probe") or {}).get("run_with_long_history")
+                ),
+            )
+            if previous_record and previous_record.get("metrics", {}).get(
+                "compression_triggered"
+            ):
+                previous_record["metrics"]["agent_input_tokens_after_compression"] = (
+                    run_detail.get("input_tokens")
+                )
             record = {
                 "case_id": case["case_id"],
                 "category": case["category"],
                 "repeat_index": repeat_index,
                 "evaluation_profile": self.evaluation_profile,
                 "turn_index": turn_index,
+                "is_final_turn": turn_index == len(turns) - 1,
                 "question": question,
                 "expected_cache": turn.get("expected_cache"),
                 "status": "completed" if result.get("http_status") == 200 else "failed",
@@ -303,6 +413,7 @@ class AgentEvaluationRunner:
             }
             record["metrics"] = self.run_metrics(record)
             records.append(record)
+            previous_record = record
         return records
 
 
@@ -407,6 +518,65 @@ def aggregate_agent_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         if (record.get("checks") or {}).get("keyword_coverage") is not None
     ]
 
+    compression_records = [
+        metric for metric in metrics if metric.get("compression_observed")
+    ]
+    compression_triggered = [
+        metric for metric in compression_records if metric.get("compression_triggered")
+    ]
+    compression_successful = [
+        metric for metric in compression_triggered if metric.get("compression_succeeded")
+    ]
+    retention_records = [
+        metric
+        for metric in metrics
+        if metric.get("memory_retention_eligible")
+        and metric.get("memory_fact_coverage") is not None
+    ]
+
+    def metric_values(items: list[dict[str, Any]], key: str) -> list[float]:
+        return [float(item[key]) for item in items if item.get(key) is not None]
+
+    compression_metrics = {
+        "available": bool(compression_records),
+        "records": len(compression_records),
+        "triggered_records": len(compression_triggered),
+        "successful_records": len(compression_successful),
+        "trigger_rate": (
+            len(compression_triggered) / len(compression_records)
+            if compression_records else None
+        ),
+        "success_rate": (
+            len(compression_successful) / len(compression_triggered)
+            if compression_triggered else None
+        ),
+        "mean_compressed_messages": _mean(
+            metric_values(compression_successful, "compressed_messages")
+        ),
+        "mean_compression_duration_ms": _mean(
+            metric_values(compression_successful, "compression_duration_ms")
+        ),
+        "mean_compression_input_tokens": _mean(
+            metric_values(compression_successful, "compression_input_tokens")
+        ),
+        "mean_compression_output_tokens": _mean(
+            metric_values(compression_successful, "compression_output_tokens")
+        ),
+        "mean_compression_total_tokens": _mean(
+            metric_values(compression_successful, "compression_total_tokens")
+        ),
+        "mean_agent_input_tokens_before_compression": _mean(
+            metric_values(compression_successful, "input_tokens")
+        ),
+        "mean_agent_input_tokens_after_compression": _mean(
+            metric_values(compression_successful, "agent_input_tokens_after_compression")
+        ),
+        "memory_constraint_retention_rate": _mean(
+            metric_values(retention_records, "memory_fact_coverage")
+        ),
+        "memory_retention_records": len(retention_records),
+    }
+
     return {
         "evaluated_records": len(completed),
         "skipped_records": len(records) - len(attempted),
@@ -466,10 +636,7 @@ def aggregate_agent_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         "total_output_tokens": sum(values("output_tokens")),
         "total_tokens": sum(values("total_tokens")),
         "tools": tools,
-        "compression_metrics": {
-            "available": False,
-            "reason": "当前 Agent run 没有把异步上下文压缩作为同一 run 的独立指标记录。",
-        },
+        "compression_metrics": compression_metrics,
         "cost_metrics": {
             "available": False,
             "reason": "已记录 token，但项目当前没有统一的模型价格表，无法直接计算金额成本。",
@@ -617,7 +784,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             "profile_description": (
                 "当前默认 Agent 行为"
                 if profile == "baseline"
-                else "增加工具路由、上下文约束和失败处理策略"
+                else "增加工具路由、上下文约束、失败处理和上下文压缩策略"
             ),
             "config_hash": profile_config_hash,
             "suite": args.suite,
@@ -712,8 +879,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             "selected_cases": len(cases),
             "protocol": "同一账号、同一数据集、同一 repeat 设置，先跑 baseline，再跑 optimized",
             "what_changed": (
-                "optimized 请求附加 Agent 工具路由、上下文约束和工具失败处理策略；"
-                "baseline 使用当前默认系统提示词。"
+                "optimized 请求附加 Agent 工具路由、上下文约束、工具失败处理策略，"
+                "并使用更早的滚动上下文压缩和硬约束摘要提示；"
+                "baseline 使用当前默认 Agent 提示词和原有 10/20 消息压缩策略。"
             ),
             "profiles": summaries,
             "metric_deltas_optimized_minus_baseline": {
@@ -735,6 +903,27 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 "mean_output_tokens_per_run": agent_delta("mean_output_tokens_per_run"),
                 "mean_ttft_ms": agent_delta("mean_ttft_ms"),
                 "mean_duration_ms": agent_delta("mean_duration_ms"),
+            },
+            "compression_metric_deltas_optimized_minus_baseline": {
+                key: (
+                    summaries["optimized"]["agent_metrics"]["compression_metrics"].get(key)
+                    - summaries["baseline"]["agent_metrics"]["compression_metrics"].get(key)
+                    if summaries["optimized"]["agent_metrics"]["compression_metrics"].get(key) is not None
+                    and summaries["baseline"]["agent_metrics"]["compression_metrics"].get(key) is not None
+                    else None
+                )
+                for key in (
+                    "trigger_rate",
+                    "success_rate",
+                    "mean_compressed_messages",
+                    "mean_compression_duration_ms",
+                    "mean_compression_input_tokens",
+                    "mean_compression_output_tokens",
+                    "mean_compression_total_tokens",
+                    "mean_agent_input_tokens_before_compression",
+                    "mean_agent_input_tokens_after_compression",
+                    "memory_constraint_retention_rate",
+                )
             },
             "raw_result_files": result_files,
         }
@@ -779,11 +968,24 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 f"{format_delta(difference, kind):>14}"
             )
 
+        def print_compression_metric(key: str, label: str, kind: str) -> None:
+            baseline_metrics = summaries["baseline"]["agent_metrics"]["compression_metrics"]
+            optimized_metrics = summaries["optimized"]["agent_metrics"]["compression_metrics"]
+            baseline_value = baseline_metrics.get(key)
+            optimized_value = optimized_metrics.get(key)
+            difference = comparison["compression_metric_deltas_optimized_minus_baseline"].get(key)
+            print(
+                f"{label:<38}"
+                f"{format_value(baseline_value, kind):>14}"
+                f"{format_value(optimized_value, kind):>14}"
+                f"{format_delta(difference, kind):>14}"
+            )
+
         print("\n" + "=" * 72)
         print("MealMate Agent 评测对比结果")
         print("=" * 72)
         print(f"数据集: {dataset} | 样本数: {len(cases)} | suite: {args.suite}")
-        print("优化项: 工具路由、上下文约束、工具失败处理策略")
+        print("优化项: 工具路由、上下文约束、工具失败处理、上下文压缩策略")
         print("差值定义: optimized - baseline")
         print("-" * 72)
         print(f"{'指标':<30}{'baseline':>14}{'optimized':>14}{'差值':>14}")
@@ -857,7 +1059,22 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 print(f"{tool_name:<30}{baseline_text:>22}{optimized_text:>22}")
 
         print("-" * 72)
-        print("上下文压缩: 本次未纳入对比。当前 optimized 只改变 Agent 路由/失败处理提示，没有改变压缩策略。")
+        print("上下文压缩")
+        print(f"{'指标':<38}{'baseline':>14}{'optimized':>14}{'差值':>14}")
+        for key, label, kind in (
+            ("trigger_rate", "压缩触发率", "rate"),
+            ("success_rate", "压缩成功率", "rate"),
+            ("mean_compressed_messages", "平均每次压缩消息数", "number"),
+            ("mean_compression_duration_ms", "平均压缩耗时", "ms"),
+            ("mean_compression_input_tokens", "压缩 LLM 平均输入 Token", "count"),
+            ("mean_compression_output_tokens", "压缩 LLM 平均输出 Token", "count"),
+            ("mean_compression_total_tokens", "压缩 LLM 平均总 Token", "count"),
+            ("mean_agent_input_tokens_before_compression", "压缩前 Agent 输入 Token", "count"),
+            ("mean_agent_input_tokens_after_compression", "压缩后 Agent 输入 Token", "count"),
+            ("memory_constraint_retention_rate", "关键约束保持率（粗略）", "rate"),
+        ):
+            print_compression_metric(key, label, kind)
+        print("说明: 压缩后 Agent 输入 Token 需要下一轮对话才能观测；末轮可能为空。")
         print("Token: 已显示 Agent run 的输入、输出和总 Token；实际金额成本需要配置各模型价格表，目前未计算。")
         print(f"详细对比文件: {comparison_path}")
         print(f"baseline 原始记录: {result_files['baseline']}")
