@@ -507,11 +507,6 @@ def is_resumable_case(
     evaluation_profile: str,
 ) -> bool:
     """Return whether an existing case result can be reused safely."""
-    if case.get("requires_network") and not include_network:
-        return len(records) == 1 and all(
-            record.get("status") == "skipped" for record in records
-        )
-
     if len(records) != expected_record_count(case):
         return False
     if any(record.get("evaluation_profile") not in (None, evaluation_profile) for record in records):
@@ -519,9 +514,20 @@ def is_resumable_case(
     if any(record.get("case") != case for record in records):
         return False
 
-    # A completed case can still be a negative evaluation result. Resuming is
-    # based on execution completeness, not on whether the case passed.
-    return all(record.get("status") == "completed" for record in records)
+    # Skipped records are intentionally not resumable. For example, a network
+    # case skipped without --include-network must run when network evaluation
+    # is enabled on the next invocation.
+    if any(record.get("status") != "completed" for record in records):
+        return False
+
+    # A completed case can still be a negative evaluation result, but a
+    # completed HTTP request whose Agent run failed should be retried. This is
+    # especially important for transient provider/network failures.
+    return all(
+        record.get("result", {}).get("http_status") == 200
+        and record.get("run", {}).get("status") in (None, "succeeded")
+        for record in records
+    )
 
 
 def write_result_records(
