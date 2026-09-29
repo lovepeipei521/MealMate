@@ -66,6 +66,7 @@ class LLMConfig(BaseModel):
     vision: VisionLLMConfig = Field(default_factory=VisionLLMConfig)
 
     default_type: LLMType = LLMType.NORMAL
+    fallback: Optional[LLMProfileConfig] = None
 
     def get_profile(self, llm_type: LLMType | str | None) -> LLMProfileConfig:
         if llm_type is None:

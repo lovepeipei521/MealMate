@@ -9,12 +9,44 @@ LLM Provider - 统一的 LLM 初始化和调用入口
 from __future__ import annotations
 
 import random
+import logging
 from typing import Any, AsyncIterator, List, Optional
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
 
 from app.config.llm_config import LLMConfig, LLMProfileConfig, LLMType
+
+logger = logging.getLogger(__name__)
+
+
+def is_retryable_provider_error(exc: BaseException) -> bool:
+    """Return whether a provider failure is suitable for one fallback attempt."""
+    status_code = getattr(exc, "status_code", None)
+    response = getattr(exc, "response", None)
+    if status_code is None and response is not None:
+        status_code = getattr(response, "status_code", None)
+    if status_code is not None:
+        try:
+            return int(status_code) in {408, 425, 429, 500, 502, 503, 504}
+        except (TypeError, ValueError):
+            pass
+
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "insufficient balance",
+            "insufficient funds",
+            "quota",
+            "rate limit",
+            "timed out",
+            "timeout",
+            "connection error",
+            "connection reset",
+            "temporarily unavailable",
+        )
+    )
 
 
 class LLMProvider:
@@ -44,6 +76,10 @@ class LLMProvider:
     def get_profile(self, llm_type: LLMType | str | None = None) -> LLMProfileConfig:
         """获取指定类型的 LLM 配置 profile"""
         return self._config.get_profile(llm_type)
+
+    def get_fallback_profile(self) -> LLMProfileConfig | None:
+        """Return the explicitly configured fallback provider, if any."""
+        return self._config.fallback
 
     def pick_model(self, llm_type: LLMType | str | None = None) -> str:
         """
@@ -185,6 +221,47 @@ class LLMInvoker:
         self._base_llm = base_llm
         self._callbacks = callbacks or []
 
+    def _create_fallback_llm(self, tools: list[Any] | None = None) -> ChatOpenAI | None:
+        profile = self._provider.get_fallback_profile()
+        if (
+            profile is None
+            or not profile.api_key
+            or not profile.base_url
+            or not profile.model_names
+        ):
+            return None
+        llm = ChatOpenAI(
+            model=profile.pick_default_model(),
+            api_key=profile.api_key,
+            base_url=profile.base_url,
+            temperature=profile.temperature,
+            max_completion_tokens=profile.max_tokens,
+            streaming=getattr(self._base_llm, "streaming", False),
+            stream_usage=True,
+        )
+        if tools:
+            llm = llm.bind(tools=tools)  # type: ignore
+        return llm  # type: ignore
+
+    def _fallback_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Copy invocation kwargs, preserving usage callbacks for fallback calls."""
+        return dict(kwargs)
+
+    async def _run_with_fallback(self, operation: str, primary_call, fallback_call):
+        try:
+            return await primary_call()
+        except Exception as exc:
+            fallback_llm = self._create_fallback_llm()
+            if fallback_llm is None or not is_retryable_provider_error(exc):
+                raise
+            logger.warning(
+                "Primary LLM provider failed; retrying with configured fallback: "
+                "operation=%s error=%s",
+                operation,
+                exc,
+            )
+            return await fallback_call(fallback_llm)
+
     def _get_llm_with_model(self, tools: list[Any] | None = None) -> ChatOpenAI:
         """
         获取绑定了随机模型的 LLM 实例
@@ -220,26 +297,71 @@ class LLMInvoker:
     async def ainvoke(self, messages: list, **kwargs: Any) -> Any:
         """异步调用 LLM"""
         kwargs = self._prepare_config(kwargs)
-        return await self._get_llm_with_model().ainvoke(messages, **kwargs)
+        primary = self._get_llm_with_model()
+        return await self._run_with_fallback(
+            "ainvoke",
+            lambda: primary.ainvoke(messages, **kwargs),
+            lambda fallback: fallback.ainvoke(messages, **kwargs),
+        )
 
     async def ainvoke_with_tools(
         self, messages: list, tools: list, **kwargs: Any
     ) -> Any:
         """异步调用 LLM（带 tools）"""
         kwargs = self._prepare_config(kwargs)
-        return await self._get_llm_with_model(tools=tools).ainvoke(messages, **kwargs)
+        primary = self._get_llm_with_model(tools=tools)
+        fallback = self._create_fallback_llm(tools=tools)
+        try:
+            return await primary.ainvoke(messages, **kwargs)
+        except Exception as exc:
+            if fallback is None or not is_retryable_provider_error(exc):
+                raise
+            logger.warning("Primary LLM provider failed; retrying tool call with fallback: %s", exc)
+            return await fallback.ainvoke(messages, **kwargs)
 
     def astream(self, messages: list, **kwargs: Any) -> AsyncIterator[Any]:
         """流式调用 LLM"""
         kwargs = self._prepare_config(kwargs)
-        return self._get_llm_with_model().astream(messages, **kwargs)
+        return self._stream_with_fallback(messages, kwargs)
+
+    async def _stream_with_fallback(
+        self, messages: list, kwargs: dict[str, Any]
+    ) -> AsyncIterator[Any]:
+        primary = self._get_llm_with_model()
+        fallback = self._create_fallback_llm()
+        emitted = False
+        try:
+            async for chunk in primary.astream(messages, **kwargs):
+                emitted = True
+                yield chunk
+            return
+        except Exception as exc:
+            if emitted or fallback is None or not is_retryable_provider_error(exc):
+                raise
+            logger.warning("Primary LLM provider failed; retrying stream with fallback: %s", exc)
+            async for chunk in fallback.astream(
+                messages, **self._fallback_kwargs(kwargs)
+            ):
+                yield chunk
 
     async def astream_with_tools(
         self, messages: list, tools: list, **kwargs: Any
     ) -> AsyncIterator[Any]:
         """流式调用 LLM（带 tools）"""
         kwargs = self._prepare_config(kwargs)
-        async for chunk in self._get_llm_with_model(tools=tools).astream(
-            messages, **kwargs
-        ):
-            yield chunk
+        primary = self._get_llm_with_model(tools=tools)
+        fallback = self._create_fallback_llm(tools=tools)
+        emitted = False
+        try:
+            async for chunk in primary.astream(messages, **kwargs):
+                emitted = True
+                yield chunk
+            return
+        except Exception as exc:
+            if emitted or fallback is None or not is_retryable_provider_error(exc):
+                raise
+            logger.warning("Primary LLM provider failed; retrying stream with fallback: %s", exc)
+            async for chunk in fallback.astream(
+                messages, **self._fallback_kwargs(kwargs)
+            ):
+                yield chunk

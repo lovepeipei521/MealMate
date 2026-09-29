@@ -64,6 +64,7 @@ def load_llm_config() -> LLMConfig:
 
     normal_data = dict(llm_data.get("normal", {}) or {})
     fast_data = dict(llm_data.get("fast", {}) or {})
+    fallback_data = dict(llm_data.get("fallback", {}) or {})
     # Top-level vision.model is the canonical configuration:
     #   vision:
     #     model:
@@ -88,9 +89,23 @@ def load_llm_config() -> LLMConfig:
     if vision_api_key:
         vision_data["api_key"] = vision_api_key
 
+    fallback_api_key = os.getenv("LLM_FALLBACK_API_KEY")
+    fallback_base_url = os.getenv("LLM_FALLBACK_BASE_URL")
+    fallback_model = os.getenv("LLM_FALLBACK_MODEL")
+    if fallback_api_key:
+        fallback_data["api_key"] = fallback_api_key
+    if fallback_base_url:
+        fallback_data["base_url"] = fallback_base_url
+    if fallback_model:
+        fallback_data["model_names"] = [fallback_model]
+
     llm_data["normal"] = normal_data
     llm_data["fast"] = fast_data
     llm_data["vision"] = vision_data
+    if fallback_data.get("api_key") and fallback_data.get("base_url") and fallback_data.get("model_names"):
+        llm_data["fallback"] = fallback_data
+    else:
+        llm_data.pop("fallback", None)
 
     return LLMConfig.model_validate(llm_data)
 
