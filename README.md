@@ -2,7 +2,7 @@
 
 <img src="./docs/mealmate-brand.svg" alt="MealMate Logo" width="512" />
 
-**智能烹饪与饮食管理助手 · 你的个性化饮食英雄**
+**智能烹饪与饮食管理助手 · 你的个性化饮食助手**
 
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.122-009688.svg)](https://fastapi.tiangolo.com/)
@@ -33,7 +33,7 @@
 
 ## 📖 项目简介
 
-**MealMate**（烹饪英雄）是一个融合 LLM、RAG、Agent、多模态与营养数据分析的个性化饮食管理平台。它不仅是菜谱库，更是一位能陪你做计划、做记录、看数据、给建议的“饮食管理英雄助手”，帮助你把烹饪与健康目标变成可执行的日常。
+**MealMate** 是一个融合 LLM、RAG、Agent、多模态与营养数据分析的个性化饮食管理平台。它不仅是菜谱库，更是一位能陪你做计划、做记录、看数据、给建议的“智能饮食管理助手”，帮助你把烹饪与健康目标变成可执行的日常。
 
 - 🔍 **智能问答**：解答烹饪技巧、食材搭配、营养知识等问题
 - 🍽️ **个性化推荐**：根据口味、目标和限制提供更贴合的菜品选择

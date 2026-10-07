@@ -1,5 +1,8 @@
 # Global Instructions
 
+## Project Identity
+- Use `MealMate` consistently as the public-facing project name in documentation, comments, and generated text.
+
 ## 0. General Code Quality Requirements
 - Clarity and Simplicity: Write clean, self-documenting code with meaningful names and consistent formatting. Prefer straightforward solutions; avoid unnecessary abstraction or complexity.
 - Reliability and Correctness: Ensure code is robust and predictable. Handle errors gracefully, validate inputs, and include tests where appropriate.
