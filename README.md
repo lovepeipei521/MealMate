@@ -7,9 +7,9 @@
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.122-009688.svg)](https://fastapi.tiangolo.com/)
 [![LangChain](https://img.shields.io/badge/LangChain-1.1-green.svg)](https://www.langchain.com/)
-[![Milvus](https://img.shields.io/badge/Milvus-2.6-orange.svg)](https://milvus.io/)
-[![NeMo Guardrails](https://img.shields.io/badge/NeMo%20Guardrails-0.12-76B900.svg)](https://github.com/NVIDIA/NeMo-Guardrails)
-[![RAGAS](https://img.shields.io/badge/RAGAS-0.2-purple.svg)](https://docs.ragas.io/)
+[![Milvus](https://img.shields.io/badge/Milvus-2.5%20%7C%20client%202.6-orange.svg)](https://milvus.io/)
+[![NeMo Guardrails](https://img.shields.io/badge/NeMo%20Guardrails-0.19-76B900.svg)](https://github.com/NVIDIA/NeMo-Guardrails)
+[![RAGAS](https://img.shields.io/badge/RAGAS-0.4.2-purple.svg)](https://docs.ragas.io/)
 [![License](https://img.shields.io/badge/License-APACHE%202.0-blue.svg)](LICENSE)
 
 简体中文 | [English](./docs/README_EN.md)
@@ -72,7 +72,7 @@ MealMate 面向厨房新手、健身/减脂/控糖人群、健康饮食倡导者
   - 知识库检索：调用内置 RAG 检索并返回可引用来源
   - Web 搜索：集成 You.com Search API，联网查询实时信息
   - 深度研究：集成 Tavily Research API，返回报告和引用来源
-  - AI 图片生成：基于 DALL-E 3 等模型生成图片，自动上传到 imgbb 持久化
+  - AI 图片生成：通过 OpenAI 兼容接口生成图片（当前示例为 SiliconFlow `Tongyi-MAI/Z-Image`），自动上传到 imgbb 持久化
   - 计算器：数学计算
   - 日期时间：获取当前时间、时区转换
 - **MCP 协议支持**：支持用户自定义 MCP 服务器并配置鉴权头
@@ -135,9 +135,9 @@ MealMate 面向厨房新手、健身/减脂/控糖人群、健康饮食倡导者
 - **可视化展示**：前端提供 LLM 统计数据页面
 
 ### 10. 安全防护体系
-- **多层防护**：输入验证 → 模式检测 → LLM 深度检测
-- **提示词注入防护**：基于规则和 AI 的双重检测机制
-- **速率限制**：Redis 滑动窗口算法，按端点类型区分限制
+- **多层防护**：输入验证 → 规则模式检测 → 可选 NeMo 深度检测
+- **提示词注入防护**：基础规则检测默认开启，NeMo Guardrails 可通过 `GUARDRAILS_ENABLED=true` 可选启用
+- **速率限制**：Redis 固定窗口计数器（`INCR + EXPIRE`），按端点类型区分限制
 - **账户安全**：登录失败锁定、JWT 过期策略、安全响应头
 - **敏感数据保护**：日志脱敏、API Key 过滤
 - **安全审计**：结构化 JSON 审计日志，支持 SIEM 系统对接
@@ -154,7 +154,7 @@ MealMate 面向厨房新手、健身/减脂/控糖人群、健康饮食倡导者
 - **Node.js**：>= 18
 - **Docker** 和 **Docker Compose**（推荐）
 
-### 方法一：Docker 一键部署（推荐）
+### 方法一：Docker 启动基础设施 + 本地启动应用（推荐）
 
 1. **克隆项目**
    ```bash
@@ -171,7 +171,8 @@ MealMate 面向厨房新手、健身/减脂/控糖人群、健康饮食倡导者
 3. **启动基础设施**
    ```bash
    cd deployments
-   docker-compose up -d
+   docker compose --env-file ../.env up -d
+   # 旧版 Docker Compose 可使用：docker-compose --env-file ../.env up -d
    ```
    这将启动：
    - PostgreSQL (端口 5432)
@@ -224,6 +225,11 @@ LLM_API_KEY=your_main_api_key
 # 快速模型 API Key（用于意图识别、查询改写等）
 FAST_LLM_API_KEY=your_fast_model_api_key
 
+# 可选：主模型服务失败时的备用 LLM（三项都填写才启用）
+LLM_FALLBACK_API_KEY=
+LLM_FALLBACK_BASE_URL=
+LLM_FALLBACK_MODEL=
+
 # 视觉模型 API Key（用于多模态分析）
 VISION_API_KEY=your_vision_model_api_key
 
@@ -249,7 +255,7 @@ TAVILY_API_KEY=tvly-your_tavily_api_key
 AMAP_API_KEY=your_amap_api_key
 
 # ==================== 图片生成 ====================
-# OpenAI 兼容的图片生成 API Key（DALL-E 3 等）
+# OpenAI 兼容的图片生成 API Key（当前示例：SiliconFlow / Tongyi-MAI/Z-Image）
 IMAGE_GENERATION_API_KEY=your_openai_api_key
 # imgbb 图床 API Key（用于图片持久化存储）
 IMGBB_STORAGE_API_KEY=your_imgbb_api_key
@@ -265,7 +271,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES=60
 REFRESH_TOKEN_EXPIRE_DAYS=7
 
 # ==================== 速率限制 ====================
-RATE_LIMIT_ENABLED=true
+# 默认 false；生产环境可按需改为 true
+RATE_LIMIT_ENABLED=false
 RATE_LIMIT_LOGIN_PER_MINUTE=5
 RATE_LIMIT_CONVERSATION_PER_MINUTE=30
 RATE_LIMIT_GLOBAL_PER_MINUTE=100
@@ -275,7 +282,9 @@ LOGIN_MAX_FAILED_ATTEMPTS=5
 LOGIN_LOCKOUT_MINUTES=15
 MAX_MESSAGE_LENGTH=10000
 MAX_IMAGE_SIZE_MB=5
+# 基础提示词防护默认开启；NeMo Guardrails 深度检测默认关闭
 PROMPT_GUARD_ENABLED=true
+GUARDRAILS_ENABLED=false
 ```
 
 ### 2. 主配置文件 (`config.yml`)
@@ -283,11 +292,10 @@ PROMPT_GUARD_ENABLED=true
 `config.yml` 包含应用的核心配置：
 
 ```yaml
-# LLM 提供商配置（分层：fast / normal / vision）
+# LLM 提供商配置（fast / normal）
 llm:
   fast:    # 快速模型（低延迟）
   normal:  # 标准模型
-  vision:  # 视觉模型（多模态）
 
 # 数据路径
 paths:
@@ -332,7 +340,7 @@ web_search:
 vision:
   model:
     enabled: true
-    model_name: "Qwen/QVQ-72B-Preview"
+    model_name: "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp"
 
 # 评估配置
 evaluation:
@@ -348,7 +356,8 @@ mcp:
 # 图片生成配置
 image_generation:
   enabled: true
-  model: "dall-e-3"
+  model: "Tongyi-MAI/Z-Image"
+  base_url: "https://api.siliconflow.cn/v1"
 
 # 图片存储配置（imgbb）
 image_storage:
@@ -380,7 +389,7 @@ database:
 - [x] **Agent 智能模式**：ReAct 推理、工具调用、会话管理 ✅
 - [x] **Subagent 专家体系**：内置与自定义子代理、可视化追踪 ✅
 - [x] **MCP 协议支持**：远程工具加载、高德地图集成 ✅
-- [x] **AI 图片生成**：DALL-E 3 集成、imgbb 持久化存储 ✅
+- [x] **AI 图片生成**：OpenAI 兼容图片生成（当前示例为 SiliconFlow Z-Image）、imgbb 持久化存储 ✅
 - [x] **饮食计划与记录**：周计划、已吃标记、AI 记录 ✅
 - [x] **营养分析与目标追踪**：每日/每周摘要、偏差分析 ✅
 - [ ] **语音交互**：语音输入查询、语音播报步骤

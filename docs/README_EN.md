@@ -1,17 +1,17 @@
 <div align="center">
 <img src="./mealmate-brand.svg" alt="MealMate Logo" width="512" />
 
-**Intelligent Cooking & Diet Management Assistant · Your Personalized Diet Hero**
+**Intelligent Cooking & Diet Management Assistant · Your Personalized Diet Assistant**
 
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.122-009688.svg)](https://fastapi.tiangolo.com/)
 [![LangChain](https://img.shields.io/badge/LangChain-1.1-green.svg)](https://www.langchain.com/)
-[![Milvus](https://img.shields.io/badge/Milvus-2.6-orange.svg)](https://milvus.io/)
-[![NeMo Guardrails](https://img.shields.io/badge/NeMo%20Guardrails-0.12-76B900.svg)](https://github.com/NVIDIA/NeMo-Guardrails)
-[![RAGAS](https://img.shields.io/badge/RAGAS-0.2-purple.svg)](https://docs.ragas.io/)
-[![License](https://img.shields.io/badge/License-APACHE%202.0-blue.svg)](LICENSE)
+[![Milvus](https://img.shields.io/badge/Milvus-2.5%20%7C%20client%202.6-orange.svg)](https://milvus.io/)
+[![NeMo Guardrails](https://img.shields.io/badge/NeMo%20Guardrails-0.19-76B900.svg)](https://github.com/NVIDIA/NeMo-Guardrails)
+[![RAGAS](https://img.shields.io/badge/RAGAS-0.4.2-purple.svg)](https://docs.ragas.io/)
+[![License](https://img.shields.io/badge/License-APACHE%202.0-blue.svg)](../LICENSE)
 
-[简体中文](README.md) | English
+[简体中文](../README.md) | English
 
 <div align="center">
 <p align="center">
@@ -29,7 +29,7 @@
 
 ## 📖 Project Overview
 
-**MealMate** is a personalized diet management platform powered by LLM, RAG, Agents, multimodal models, and nutrition analytics. It is more than a recipe library—it is your “diet hero assistant” that helps you plan, log, analyze, and improve daily eating habits end-to-end.
+**MealMate** is a personalized diet management platform powered by LLM, RAG, Agents, multimodal models, and nutrition analytics. It is more than a recipe library—it is your “diet assistant” that helps you plan, log, analyze, and improve daily eating habits end-to-end.
 
 - 🔍 **Smart Q&A**: Answer cooking techniques, ingredient pairings, and nutrition questions
 - 🍽️ **Personalized Recommendations**: Suggest dishes aligned with goals and dietary restrictions
@@ -68,7 +68,7 @@ MealMate is built for kitchen beginners, fitness/weight-loss users, glycemic con
   - Knowledge Base Search: Call the internal RAG retriever with sources
   - Web Search: Integrated You.com Search API for real-time information queries
   - Deep Research: Integrated Tavily Research API for reports with citations
-  - AI Image Generation: Generate images using DALL-E 3 etc., auto-upload to imgbb for persistence
+  - AI Image Generation: Generate images through OpenAI-compatible APIs (currently SiliconFlow `Tongyi-MAI/Z-Image`), auto-upload to imgbb for persistence
   - Calculator: Mathematical calculations
   - DateTime: Get current time, timezone conversion
 - **MCP Protocol Support**: Allow users to register MCP servers with auth headers
@@ -134,9 +134,9 @@ MealMate is built for kitchen beginners, fitness/weight-loss users, glycemic con
 - **Visualization**: Frontend LLM statistics page
 
 ### 10. Security Protection System
-- **Multi-layer Defense**: Input validation → Pattern detection → LLM deep detection
-- **Prompt Injection Protection**: Dual detection mechanism based on rules and AI
-- **Rate Limiting**: Redis sliding window algorithm with endpoint-specific limits
+- **Multi-layer Defense**: Input validation → Rule-based pattern detection → Optional NeMo deep detection
+- **Prompt Injection Protection**: Basic rule-based protection enabled by default; optional NeMo Guardrails via `GUARDRAILS_ENABLED=true`
+- **Rate Limiting**: Redis fixed-window counter (`INCR + EXPIRE`) with endpoint-specific limits
 - **Account Security**: Login failure lockout, JWT expiration policy, security headers
 - **Sensitive Data Protection**: Log sanitization, API key filtering
 - **Security Audit**: Structured JSON audit logs, SIEM system integration support
@@ -153,7 +153,7 @@ MealMate is built for kitchen beginners, fitness/weight-loss users, glycemic con
 - **Node.js**: >= 18
 - **Docker** and **Docker Compose** (recommended)
 
-### Method 1: Docker One-Click Deployment (Recommended)
+### Method 1: Docker Infrastructure + Local Application Startup (Recommended)
 
 1. **Clone the repository**
    ```bash
@@ -170,7 +170,8 @@ MealMate is built for kitchen beginners, fitness/weight-loss users, glycemic con
 3. **Start infrastructure**
    ```bash
    cd deployments
-   docker-compose up -d
+   docker compose --env-file ../.env up -d
+   # Legacy Docker Compose: docker-compose --env-file ../.env up -d
    ```
    This will start:
    - PostgreSQL (port 5432)
@@ -223,6 +224,11 @@ LLM_API_KEY=your_main_api_key
 # Fast Model API Key (for intent detection, query rewriting)
 FAST_LLM_API_KEY=your_fast_model_api_key
 
+# Optional fallback LLM when the primary provider fails (all three required)
+LLM_FALLBACK_API_KEY=
+LLM_FALLBACK_BASE_URL=
+LLM_FALLBACK_MODEL=
+
 # Vision Model API Key (for multimodal analysis)
 VISION_API_KEY=your_vision_model_api_key
 
@@ -248,7 +254,7 @@ TAVILY_API_KEY=tvly-your_tavily_api_key
 AMAP_API_KEY=your_amap_api_key
 
 # ==================== Image Generation ====================
-# OpenAI-compatible image generation API Key (DALL-E 3, etc.)
+# OpenAI-compatible image generation API Key (current example: SiliconFlow / Tongyi-MAI/Z-Image)
 IMAGE_GENERATION_API_KEY=your_openai_api_key
 # imgbb image hosting API Key (for image persistence)
 IMGBB_STORAGE_API_KEY=your_imgbb_api_key
@@ -264,7 +270,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES=60
 REFRESH_TOKEN_EXPIRE_DAYS=7
 
 # ==================== Rate Limiting ====================
-RATE_LIMIT_ENABLED=true
+# Default: false; set to true when needed in production
+RATE_LIMIT_ENABLED=false
 RATE_LIMIT_LOGIN_PER_MINUTE=5
 RATE_LIMIT_CONVERSATION_PER_MINUTE=30
 RATE_LIMIT_GLOBAL_PER_MINUTE=100
@@ -274,7 +281,9 @@ LOGIN_MAX_FAILED_ATTEMPTS=5
 LOGIN_LOCKOUT_MINUTES=15
 MAX_MESSAGE_LENGTH=10000
 MAX_IMAGE_SIZE_MB=5
+# Basic prompt protection is enabled by default; NeMo Guardrails deep checks are optional
 PROMPT_GUARD_ENABLED=true
+GUARDRAILS_ENABLED=false
 ```
 
 ### 2. Main Configuration File (`config.yml`)
@@ -282,11 +291,10 @@ PROMPT_GUARD_ENABLED=true
 `config.yml` contains the core configuration of the application:
 
 ```yaml
-# LLM Provider Configuration (Layered: fast / normal / vision)
+# LLM Provider Configuration (fast / normal)
 llm:
   fast:    # Fast models (low latency)
   normal:  # Standard models (high quality)
-  vision:  # Vision models (multimodal)
 
 # Data paths
 paths:
@@ -331,7 +339,7 @@ web_search:
 vision:
   model:
     enabled: true
-    model_name: "Qwen/QVQ-72B-Preview"
+    model_name: "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp"
 
 # Evaluation configuration
 evaluation:
@@ -347,7 +355,8 @@ mcp:
 # Image generation configuration
 image_generation:
   enabled: true
-  model: "dall-e-3"
+  model: "Tongyi-MAI/Z-Image"
+  base_url: "https://api.siliconflow.cn/v1"
 
 # Image storage configuration (imgbb)
 image_storage:
@@ -379,7 +388,7 @@ See comments in `config.yml` for detailed explanations.
 - [x] **Agent Intelligent Mode**: ReAct reasoning, tool invocation, session management ✅
 - [x] **Subagent Expert System**: Built-in/custom subagents with visual traces ✅
 - [x] **MCP Protocol Support**: Remote tool loading, Amap integration ✅
-- [x] **AI Image Generation**: DALL-E 3 integration, imgbb persistent storage ✅
+- [x] **AI Image Generation**: OpenAI-compatible image generation (currently SiliconFlow Z-Image), imgbb persistent storage ✅
 - [x] **Diet Planning & Logging**: Weekly plans, mark-as-eaten, AI logging ✅
 - [x] **Nutrition Analytics & Goals**: Daily/weekly summaries, deviation analysis ✅
 - [ ] **Voice Interaction**: Voice input queries, voice step narration
@@ -404,7 +413,7 @@ Contributions, issues, and feature requests are welcome!
 
 ## 📄 License
 
-This project is licensed under the [APACHE LICENSE 2.0](LICENSE). See the LICENSE file for details.
+This project is licensed under the [APACHE LICENSE 2.0](../LICENSE). See the LICENSE file for details.
 
 ---
 
